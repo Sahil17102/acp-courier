@@ -1,0 +1,10 @@
+{
+  "name": "acp-courier-speed",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node dev.mjs",
+    "build": "npm --prefix user-panel run build"
+  }
+}
