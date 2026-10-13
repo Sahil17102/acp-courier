@@ -9,6 +9,7 @@ import dotenv from "dotenv";
 import nodemailer from "nodemailer";
 import { createSellerRegistry, registerStorageRoutes, acpObjectKey, putAcpObject } from "./acp-storage.mjs";
 import { registerIndiaPostRoutes } from "./india-post.mjs";
+import { startDatabasePersistence } from "./database.mjs";
 
 const app = express();
 const port = Number(process.env.PORT || 10000);
@@ -16,6 +17,7 @@ const root = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: process.env.DOTENV_CONFIG_PATH || path.join(root, ".env") });
 const providerOrdersFile = process.env.PROVIDER_ORDERS_FILE || path.join(process.env.DATA_DIR || root, "data", "provider-orders.json");
 const dataDir = process.env.DATA_DIR || path.join(root, "data");
+const database = await startDatabasePersistence(dataDir);
 const notificationsFile = path.join(dataDir, "notifications.json");
 const walletLedgerFile = path.join(dataDir, "wallet-ledger.json");
 const razorpayOrdersFile = path.join(dataDir, "razorpay-orders.json");
@@ -1898,7 +1900,7 @@ app.post("/api/admin/b2b/calculate-rate", (req, res) => res.json({ data: calcula
 registerStorageRoutes(app, { dataDir, sellerRegistry });
 
 app.get("/", (_req, res) => res.json({ service: "acp-courier-api", ok: true }));
-app.get("/api/health", (_req, res) => res.json({ service: "acp-courier-api", ok: true }));
+app.get("/api/health", (_req, res) => res.json({ service: "acp-courier-api", ok: true, database: database.connected }));
 app.use(express.static(path.join(root, "dist")));
 app.get("*path", (_req, res) => res.sendFile(path.join(root, "dist", "index.html")));
 app.use((error, _req, res, _next) => {
