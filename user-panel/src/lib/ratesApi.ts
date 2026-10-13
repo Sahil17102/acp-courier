@@ -249,7 +249,8 @@ interface SharedCourier {
 
 async function getSharedCouriers(businessType: "b2c" | "b2b"): Promise<SharedCourier[]> {
   try {
-    const response = await fetch(`https://shipsy-kyio.onrender.com/api/couriers?businessType=${businessType}&isEnabled=true`, { cache: "no-store" });
+    const apiBaseUrl = (import.meta.env.VITE_API_URL || "https://acp-courier2.onrender.com/api").replace(/\/+$/, "");
+    const response = await fetch(`${apiBaseUrl}/couriers?businessType=${businessType}&isEnabled=true`, { cache: "no-store" });
     if (!response.ok) return [];
     const data = await response.json() as { couriers?: SharedCourier[] };
     return Array.isArray(data.couriers) ? data.couriers : [];

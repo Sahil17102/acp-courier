@@ -3,7 +3,7 @@ import { shouldUseStaticClientData } from "./staticMode";
 
 const STATIC_WALLET_TRANSACTIONS_KEY = "shipsy-static-wallet-transactions";
 const STATIC_WALLET_ID = "wallet-demo-client-user";
-const SHARED_WALLET_URL = "https://shipsy-kyio.onrender.com/api/wallets";
+const SHARED_WALLET_URL = `${(import.meta.env.VITE_API_URL || "https://acp-courier2.onrender.com/api").replace(/\/+$/, "")}/wallets`;
 
 function currentUserId(): string {
   try {

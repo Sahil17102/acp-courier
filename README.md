@@ -16,6 +16,12 @@ npm run dev
 - Landing page: http://localhost:4173
 - Sign in: http://localhost:5176/login
 - User panel: http://localhost:5176/home
+
+## Production services
+
+- Landing page: https://acp-courier.onrender.com
+- Sign in / user panel: https://acp-courieruser.onrender.com/login
+- API backend: https://acp-courier2.onrender.com
 - Local demo: select **OTP**, enter any email, then use `123456`.
 
 Live carrier booking, email OTP, payments and cloud storage require the corresponding production API credentials from `.env.example`.

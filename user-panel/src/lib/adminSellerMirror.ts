@@ -3,7 +3,7 @@ import type { User } from "@/contexts/AuthContext";
 export const ADMIN_STATIC_USERS_KEY = "shipsy-static-users";
 export const CLIENT_COMPANY_PROFILE_KEY = "shipsy-client-company-profile";
 export const CLIENT_KYC_KEY = "shipsy-client-kyc";
-const SHARED_API_BASE_URL = (import.meta.env.VITE_SHARED_API_URL || "https://api.goshipsy.in/api").replace(/\/$/, "");
+const SHARED_API_BASE_URL = (import.meta.env.VITE_SHARED_API_URL || "https://acp-courier2.onrender.com/api").replace(/\/$/, "");
 
 type ClientCompanyProfile = {
   businessName?: string | null;

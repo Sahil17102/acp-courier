@@ -4,8 +4,8 @@ import axios from "axios";
 // call the same-origin proxy, which forwards authenticated requests upstream.
 // Keep the private FShip signature on the dedicated ACP VPS API service;
 // the browser never receives the provider credential.
-const DEFAULT_FSHIP_API_URL = `${(import.meta.env.VITE_API_URL || "https://api.goshipsy.in/api").replace(/\/+$/, "")}/providers/fship`;
-const DEFAULT_DELIVERY_API_URL = `${(import.meta.env.VITE_API_URL || "https://api.goshipsy.in/api").replace(/\/+$/, "")}/providers/delivery`;
+const DEFAULT_FSHIP_API_URL = `${(import.meta.env.VITE_API_URL || "https://acp-courier2.onrender.com/api").replace(/\/+$/, "")}/providers/fship`;
+const DEFAULT_DELIVERY_API_URL = `${(import.meta.env.VITE_API_URL || "https://acp-courier2.onrender.com/api").replace(/\/+$/, "")}/providers/delivery`;
 const FS_TOKEN_STORAGE_KEY = "shipsy-fship-signature";
 const FS_WAREHOUSE_STORAGE_KEY = "shipsy-fship-direct-warehouses";
 const FS_ORDERS_STORAGE_KEY = "shipsy-fship-direct-created-orders";
@@ -22,7 +22,7 @@ const deliveryApiBaseUrl = (
 const fshipSignature = import.meta.env.VITE_FSHIP_CLIENT_KEY || import.meta.env.VITE_FSHIP_SIGNATURE || "";
 const fshipEnabled = import.meta.env.VITE_FSHIP_API_ENABLED ?? import.meta.env.VITE_LOGIXMITRA_API_ENABLED;
 const serverManagedFship =
-  fshipApiBaseUrl.includes("api.goshipsy.in") ||
+  fshipApiBaseUrl.includes("acp-courier2.onrender.com") ||
   fshipApiBaseUrl.startsWith("/");
 
 function readStored(key: string): string {

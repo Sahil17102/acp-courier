@@ -101,7 +101,10 @@ app.disable("x-powered-by");
 app.use((req, res, next) => {
   const allowed = new Set([
     "https://acpcourier.vercel.app",
+    "https://acp-courier.onrender.com",
+    "https://acp-courieruser.onrender.com",
     "http://localhost:5173",
+    "http://localhost:5176",
     ...String(process.env.ALLOWED_ORIGINS || "")
       .split(",")
       .map((value) => value.trim())

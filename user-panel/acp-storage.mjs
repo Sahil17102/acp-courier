@@ -184,7 +184,7 @@ function emptyKyc(userId) {
 }
 
 function publicObjectUrl(key) {
-  const base = clean(process.env.PUBLIC_API_URL || "https://api.goshipsy.in/api").replace(/\/+$/, "");
+  const base = clean(process.env.PUBLIC_API_URL || "https://acp-courier2.onrender.com/api").replace(/\/+$/, "");
   return `${base}/storage/object/${Buffer.from(key).toString("base64url")}`;
 }
 
