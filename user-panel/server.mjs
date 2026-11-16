@@ -200,22 +200,23 @@ app.post("/api/auth/send-otp", async (req, res, next) => {
       attempts: 0,
     });
 
-    const fromAddress = normalizedEmail(process.env.MAIL_FROM_ADDRESS || process.env.SMTP_USER);
-    const fromName = String(process.env.MAIL_FROM_NAME || "ACP Courier Speed").trim();
-    await getMailTransport().sendMail({
-      from: { name: fromName, address: fromAddress },
-      to: email,
-      subject: `${code} is your ACP Courier Speed verification code`,
-      text: `Your ACP Courier Speed verification code is ${code}. It expires in 10 minutes. If you did not request this code, you can ignore this email.`,
-      html: `<div style="font-family:Arial,sans-serif;max-width:520px;margin:auto;padding:28px;color:#092d59"><h2 style="margin:0 0 12px">ACP Courier Speed verification</h2><p>Use this one-time code to continue:</p><div style="font-size:32px;font-weight:700;letter-spacing:8px;color:#f36b00;margin:24px 0">${code}</div><p>This code expires in 10 minutes.</p><p style="color:#667085;font-size:13px">If you did not request this code, you can safely ignore this email.</p></div>`,
-    });
+    const displayOtpEnabled = String(process.env.OTP_DISPLAY_ENABLED || "false").toLowerCase() === "true";
+    if (!displayOtpEnabled) {
+      const fromAddress = normalizedEmail(process.env.MAIL_FROM_ADDRESS || process.env.SMTP_USER);
+      const fromName = String(process.env.MAIL_FROM_NAME || "ACP Courier Speed").trim();
+      await getMailTransport().sendMail({
+        from: { name: fromName, address: fromAddress },
+        to: email,
+        subject: `${code} is your ACP Courier Speed verification code`,
+        text: `Your ACP Courier Speed verification code is ${code}. It expires in 10 minutes. If you did not request this code, you can ignore this email.`,
+        html: `<div style="font-family:Arial,sans-serif;max-width:520px;margin:auto;padding:28px;color:#092d59"><h2 style="margin:0 0 12px">ACP Courier Speed verification</h2><p>Use this one-time code to continue:</p><div style="font-size:32px;font-weight:700;letter-spacing:8px;color:#f36b00;margin:24px 0">${code}</div><p>This code expires in 10 minutes.</p><p style="color:#667085;font-size:13px">If you did not request this code, you can safely ignore this email.</p></div>`,
+      });
+    }
 
     return res.json({
       isNewUser: !sellerRegistry.findByEmail(email),
-      message: "OTP sent successfully.",
-      ...(String(process.env.OTP_DISPLAY_ENABLED || "false").toLowerCase() === "true"
-        ? { otp: code }
-        : {}),
+      message: displayOtpEnabled ? "OTP generated successfully." : "OTP sent successfully.",
+      ...(displayOtpEnabled ? { otp: code } : {}),
     });
   } catch (error) {
     next(error);
