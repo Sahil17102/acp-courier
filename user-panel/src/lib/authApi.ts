@@ -132,13 +132,13 @@ export const authApi = {
     return user;
   },
 
-  sendOtp: async (identifier: string): Promise<{ isNewUser: boolean }> => {
+  sendOtp: async (identifier: string): Promise<{ isNewUser: boolean; otp?: string }> => {
     const cleanIdentifier = identifier.trim();
     if (EMAIL_OTP_ENABLED && !cleanIdentifier.includes("@")) {
       throw new Error("Enter a valid email address to receive an OTP.");
     }
     if (cleanIdentifier.includes("@") && (EMAIL_OTP_ENABLED || !shouldUseStaticClientData())) {
-      const { data } = await api.post<{ isNewUser: boolean }>("/auth/send-otp", {
+      const { data } = await api.post<{ isNewUser: boolean; otp?: string }>("/auth/send-otp", {
         identifier: cleanIdentifier,
       });
       return { ...data, isNewUser: !findAccount(cleanIdentifier) };

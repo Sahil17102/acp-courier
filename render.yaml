@@ -21,6 +21,8 @@ services:
         value: https://acp-courier2-new.onrender.com
       - key: OTP_SECRET
         generateValue: true
+      - key: OTP_DISPLAY_ENABLED
+        value: "true"
 
   - type: web
     runtime: static

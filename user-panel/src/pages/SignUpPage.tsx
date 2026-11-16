@@ -29,6 +29,7 @@ export function SignUpPage() {
   const [step, setStep] = useState<AuthStep>("identifier");
   const [identifier, setIdentifier] = useState("");
   const [isNewUser, setIsNewUser] = useState(true);
+  const [displayOtp, setDisplayOtp] = useState<string | null>(null);
   const [resendTimer, setResendTimer] = useState(RESEND_COOLDOWN);
 
   // Login method
@@ -82,6 +83,7 @@ export function SignUpPage() {
     resetMutations();
     const result = await sendOtpMutation.mutateAsync(identifier.trim());
     setIsNewUser(result.isNewUser);
+    setDisplayOtp(result.otp ?? null);
     setStep("otp");
     setResendTimer(RESEND_COOLDOWN);
   }
@@ -122,6 +124,7 @@ export function SignUpPage() {
 
   function goBack() {
     setStep("identifier");
+    setDisplayOtp(null);
     resetMutations();
   }
 
@@ -159,6 +162,7 @@ export function SignUpPage() {
                 <OtpVerificationStep
                   identifier={identifier}
                   isNewUser={isNewUser}
+                  displayOtp={displayOtp}
                   loading={loading}
                   error={error}
                   resendTimer={resendTimer}

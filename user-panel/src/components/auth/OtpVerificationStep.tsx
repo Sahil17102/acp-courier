@@ -18,6 +18,7 @@ const slideVariants = {
 interface OtpVerificationStepProps {
   identifier: string;
   isNewUser: boolean;
+  displayOtp: string | null;
   loading: boolean;
   error: string | null;
   resendTimer: number;
@@ -29,6 +30,7 @@ interface OtpVerificationStepProps {
 export function OtpVerificationStep({
   identifier,
   isNewUser,
+  displayOtp,
   loading,
   error,
   resendTimer,
@@ -80,13 +82,13 @@ export function OtpVerificationStep({
             </div>
           </div>
         </div>
-        {SHOW_LOCAL_OTP && (
+        {(displayOtp || SHOW_LOCAL_OTP) && (
           <div className="mb-5 rounded-2xl border-2 border-accent/25 bg-accent-bg p-4 text-center">
             <p className="text-[11px] font-extrabold uppercase tracking-[0.2em] text-accent">
-              Your login OTP
+              Working login OTP
             </p>
             <p className="mt-2 font-mono text-3xl font-extrabold tracking-[0.35em] text-foreground">
-              {LOCAL_OTP}
+              {displayOtp || LOCAL_OTP}
             </p>
             <p className="mt-2 text-xs font-medium text-muted">
               Enter this code below to continue.
