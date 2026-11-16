@@ -252,6 +252,61 @@ app.post("/api/auth/verify-otp", (req, res, next) => {
   }
 });
 
+app.post("/api/auth/onboarding", (req, res, next) => {
+  try {
+    const authenticatedEmail = requireEmail(req.get("x-acp-user-email"));
+    const existing = sellerRegistry.findByEmail(authenticatedEmail);
+    if (!existing) {
+      return res.status(401).json({ message: "Sign in again before completing setup." });
+    }
+
+    const requestedEmail = req.body?.email ? requireEmail(req.body.email) : authenticatedEmail;
+    if (requestedEmail !== authenticatedEmail) {
+      return res.status(409).json({ message: "Email cannot be changed during setup." });
+    }
+
+    const firstName = String(req.body?.firstName || "").trim();
+    const lastName = String(req.body?.lastName || "").trim();
+    const phone = String(req.body?.phone || "").replace(/\D/g, "");
+    const pincode = String(req.body?.pincode || "").trim();
+    const businessName = String(req.body?.businessName || "").trim();
+    if (!firstName) return res.status(400).json({ message: "First name is required." });
+    if (!lastName) return res.status(400).json({ message: "Last name is required." });
+    if (!/^\d{10}$/.test(phone)) return res.status(400).json({ message: "Valid 10-digit phone is required." });
+    if (!/^\d{6}$/.test(pincode)) return res.status(400).json({ message: "Valid 6-digit pincode is required." });
+    if (!businessName) return res.status(400).json({ message: "Business name is required." });
+
+    const phoneOwner = sellerRegistry.list().find((seller) =>
+      String(seller?.id || "") !== String(existing.id || "") &&
+      String(seller?.phone || "").replace(/\D/g, "") === phone,
+    );
+    if (phoneOwner) {
+      return res.status(409).json({ message: "Phone number is already linked to another account." });
+    }
+
+    const updated = sellerRegistry.upsert({
+      ...existing,
+      firstName,
+      lastName,
+      name: `${firstName} ${lastName}`.trim(),
+      email: authenticatedEmail,
+      phone,
+      pincode,
+      businessName,
+      sellsOn: Array.isArray(req.body?.sellsOn) ? req.body.sellsOn.map(String) : [],
+      monthlyShipmentVolume: String(req.body?.monthlyShipmentVolume || "").trim(),
+      integrationsOfInterest: Array.isArray(req.body?.integrationsOfInterest)
+        ? req.body.integrationsOfInterest.map(String)
+        : [],
+      onboardingComplete: true,
+    });
+
+    return res.json({ user: publicUserForEmail(authenticatedEmail, updated) });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.post("/api/admin/auth/login", (req, res, next) => {
   try {
     const email = requireEmail(req.body?.email);
