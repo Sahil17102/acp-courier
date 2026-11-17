@@ -16,7 +16,7 @@ services:
           name: acp-courier-db-new
           property: connectionString
       - key: ALLOWED_ORIGINS
-        value: https://acp-courier-new.onrender.com,https://acp-courieruser-new.onrender.com
+        value: https://acp-courier-new.onrender.com,https://acp-courieruser-new.onrender.com,https://acp-courieradmin-new.onrender.com
       - key: PUBLIC_API_URL
         value: https://acp-courier2-new.onrender.com
       - key: OTP_SECRET
@@ -64,6 +64,8 @@ services:
     envVars:
       - key: VITE_STATIC_DATA_ENABLED
         value: "true"
+      - key: VITE_API_URL
+        value: https://acp-courier2-new.onrender.com/api
       - key: VITE_COURIER_API_ENABLED
         value: "false"
     routes:

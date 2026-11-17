@@ -11,6 +11,7 @@ import type {
 } from "./types";
 
 const useStaticData = import.meta.env.VITE_STATIC_DATA_ENABLED === "true";
+const sharedApiUrl = (import.meta.env.VITE_API_URL || "https://acp-courier2-new.onrender.com/api").replace(/\/+$/, "");
 const KYC_STATUSES = ["not_submitted", "pending", "approved", "rejected"] as const;
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -202,6 +203,19 @@ export const usersApi = {
     sortOrder?: string;
   }): Promise<ListUsersResponse> => {
     if (useStaticData) {
+      try {
+        const response = await fetch(`${sharedApiUrl}/sellers`, {
+          cache: "no-store",
+          signal: AbortSignal.timeout(8_000),
+        });
+        if (response.ok) {
+          const payload = await response.json() as { users?: unknown[] };
+          const liveUsers = Array.isArray(payload.users) ? payload.users.map(normalizeUser) : [];
+          if (liveUsers.length > 0) return filterUsers(liveUsers, params);
+        }
+      } catch {
+        // Render may be waking up; retain the local seller so Admin stays fast.
+      }
       return filterUsers(readStaticUsers(), params);
     }
 

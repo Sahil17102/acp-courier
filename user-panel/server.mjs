@@ -146,6 +146,9 @@ app.use((req, res, next) => {
     "https://acpcourier.vercel.app",
     "https://acp-courier.onrender.com",
     "https://acp-courieruser.onrender.com",
+    "https://acp-courier-new.onrender.com",
+    "https://acp-courieruser-new.onrender.com",
+    "https://acp-courieradmin-new.onrender.com",
     "http://localhost:5173",
     "http://localhost:5176",
     ...String(process.env.ALLOWED_ORIGINS || "")

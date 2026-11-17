@@ -85,7 +85,7 @@ export function seedAdmin(): User {
     role: "superadmin",
     designation: "Operations Lead",
     roleLabel: "Superadmin",
-    assignedSellerIds: ["demo-client-user"],
+    assignedSellerIds: [],
     permissions: [],
     isVerified: true,
     onboardingComplete: true,
