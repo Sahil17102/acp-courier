@@ -23,9 +23,10 @@ import {
   formatCurrency,
 } from "@/utils/orderHelpers";
 import { normalizeQuantity, totalDeadWeightKg } from "@/utils/b2bBoxes";
-import { useSaveOrderDraft } from "@/queries/useOrders";
+import { useCreateOrder } from "@/queries/useOrders";
 import { FormToggle } from "@/components/forms";
-import type { DraftOrderPayload } from "@/lib/ordersApi";
+import type { CreateOrderPayload } from "@/lib/ordersApi";
+import type { AvailableCourier } from "@/queries/useDelhiveryRate";
 import {
   OrderDetailsSection,
   DeliveryDetailsSection,
@@ -35,6 +36,7 @@ import {
   InvoiceDetailsSection,
   ChargesSummarySection,
   PickupLocationSection,
+  CourierSelectionSection,
   StepIndicator,
   type Step,
 } from "@/components/orders";
@@ -42,6 +44,7 @@ import {
 const STEPS: Step[] = [
   { label: "Order & Delivery", shortLabel: "Order" },
   { label: "Pickup Location", shortLabel: "Pickup" },
+  { label: "Choose Courier", shortLabel: "Courier" },
 ];
 
 function MobileBottomBar({
@@ -109,7 +112,7 @@ function MobileBottomBar({
                 </>
               ) : (
                 <>
-                  Save to Drafts
+                  Book Shipment
                   <ArrowRight className="w-4 h-4" />
                 </>
               )}
@@ -124,8 +127,9 @@ function MobileBottomBar({
 export function CreateOrderPage() {
   const navigate = useNavigate();
   const { data: kyc, isLoading: isKycLoading } = useKyc();
-  const saveDraftMutation = useSaveOrderDraft();
+  const createOrderMutation = useCreateOrder();
   const [currentStep, setCurrentStep] = useState(1);
+  const [availableCouriers, setAvailableCouriers] = useState<AvailableCourier[]>([]);
 
   const methods = useForm<OrderFormValues>({
     resolver: zodResolver(orderFormSchema),
@@ -179,6 +183,8 @@ export function CreateOrderPage() {
   } = methods;
 
   const currentOrderType = watchField("orderType");
+  const selectedCourierId = watchField("selectedCourierId");
+  const selectedCourier = availableCouriers.find((courier) => courier.courierId === selectedCourierId);
 
   const onSubmit = async (data: OrderFormValues) => {
     if (!data.pickupAddressId) {
@@ -208,7 +214,13 @@ export function CreateOrderPage() {
       topHeight = Math.max(...data.packages.map((p) => p.height ?? 0));
     }
 
-    const payload: DraftOrderPayload = {
+    if (!selectedCourier) {
+      setCurrentStep(3);
+      toast.error("Please select a courier partner before booking");
+      return;
+    }
+
+    const payload: CreateOrderPayload = {
       orderId: data.orderId,
       orderDate: data.orderDate,
       orderType: data.orderType,
@@ -231,6 +243,26 @@ export function CreateOrderPage() {
       pickupAddressId: data.pickupAddressId,
       preferredPickupDate: data.preferredPickupDate,
       preferredPickupTime: data.preferredPickupTime || undefined,
+      courierId: selectedCourier.courierId,
+      courierName: selectedCourier.name,
+      serviceProvider: selectedCourier.serviceProvider,
+      chargeableWeight: selectedCourier.chargeableWeight,
+      rate: {
+        forward: selectedCourier.rate.forward,
+        rto: selectedCourier.rate.rto,
+        codCharges: selectedCourier.rate.codCharges,
+        otherCharges: selectedCourier.rate.otherCharges,
+        freightCharge: selectedCourier.rate.freightCharge,
+        totalCharge: selectedCourier.rate.totalCharge,
+        zone: selectedCourier.zone.code,
+      },
+      ...(selectedCourier._b2bRate ? {
+        chargesBreakdown: {
+          baseFreight: selectedCourier._b2bRate.baseFreight,
+          overheads: selectedCourier._b2bRate.overheads,
+          total: selectedCourier._b2bRate.total,
+        },
+      } : {}),
 
       // B2B-specific fields
       ...(data.orderType === "B2B" && {
@@ -255,8 +287,8 @@ export function CreateOrderPage() {
     };
 
     try {
-      await saveDraftMutation.mutateAsync(payload);
-      navigate("/orders/drafts");
+      const order = await createOrderMutation.mutateAsync(payload);
+      navigate(`/orders/${encodeURIComponent(order.id)}`);
     } catch {
       // Error handled by mutation onError
     }
@@ -271,6 +303,7 @@ export function CreateOrderPage() {
     "transactionFee", "discount", "prepaidAmount",
   ] as const;
   const STEP2_FIELDS = ["pickupAddressId", "preferredPickupDate", "preferredPickupTime"] as const;
+  const STEP3_FIELDS = ["selectedCourierId"] as const;
   const STEP1_SET = new Set<string>(STEP1_FIELDS);
   const STEP2_SET = new Set<string>(STEP2_FIELDS);
 
@@ -339,12 +372,15 @@ export function CreateOrderPage() {
     if (errorKeys.length === 0) return;
 
     // Determine which step owns the first error and navigate there
-    const firstKey = errorKeys.find((k) => STEP1_SET.has(k) || STEP2_SET.has(k)) ?? errorKeys[0];
+    const firstKey = errorKeys.find((k) => STEP1_SET.has(k) || STEP2_SET.has(k) || k === "selectedCourierId") ?? errorKeys[0];
     if (STEP1_SET.has(firstKey)) {
       setCurrentStep(1);
       window.scrollTo({ top: 0, behavior: "smooth" });
     } else if (STEP2_SET.has(firstKey)) {
       setCurrentStep(2);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } else if (firstKey === "selectedCourierId") {
+      setCurrentStep(3);
       window.scrollTo({ top: 0, behavior: "smooth" });
     }
 
@@ -366,7 +402,7 @@ export function CreateOrderPage() {
     // Validate current step fields when moving forward
     if (step > currentStep) {
       const fieldsToValidate =
-        currentStep === 1 ? STEP1_FIELDS : currentStep === 2 ? STEP2_FIELDS : [];
+        currentStep === 1 ? STEP1_FIELDS : currentStep === 2 ? STEP2_FIELDS : STEP3_FIELDS;
       const isValid = await trigger([...fieldsToValidate]);
       if (!isValid) {
         const labels = getErroredLabels(methods.formState.errors, fieldsToValidate);
@@ -509,6 +545,19 @@ export function CreateOrderPage() {
                   </motion.div>
                 )}
 
+                {currentStep === 3 && (
+                  <motion.div
+                    key="step3"
+                    initial={{ opacity: 0, x: 20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: -20 }}
+                    transition={{ duration: 0.25 }}
+                    className="space-y-4"
+                  >
+                    <CourierSelectionSection onCouriersLoaded={setAvailableCouriers} />
+                  </motion.div>
+                )}
+
               </AnimatePresence>
             </div>
 
@@ -522,8 +571,8 @@ export function CreateOrderPage() {
                   onNext={handleNext}
                   onBack={currentStep > 1 ? handleBack : undefined}
                   nextLabel={nextLabel}
-                  submitLabel="Save to Drafts"
-                  submittingLabel="Saving Draft..."
+                  submitLabel="Book Shipment"
+                  submittingLabel="Booking Shipment..."
                 />
               </div>
             </div>
