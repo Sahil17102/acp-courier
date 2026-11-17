@@ -22,7 +22,23 @@ try {
   console.error("[ACP Courier Speed] Theme initialization failed", error);
 }
 
-const queryClient = new QueryClient();
+// Keep navigation responsive: most panel screens are read-only until the user
+// performs an action, so briefly reuse data and never spend minutes retrying a
+// deterministic 4xx/API-route error. Mutations still explicitly invalidate
+// their affected records after every successful update.
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 30_000,
+      refetchOnWindowFocus: false,
+      retry: (failureCount, error: any) => {
+        const status = Number(error?.status || error?.response?.status || 0);
+        if (status >= 400 && status < 500) return false;
+        return failureCount < 1;
+      },
+    },
+  },
+});
 
 function Providers({ children }: { children: ReactNode }) {
   const content = (
