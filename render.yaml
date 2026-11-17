@@ -42,6 +42,9 @@ services:
     buildCommand: npm ci && npm run build
     staticPublishPath: dist
     envVars:
+      # The static build runs TypeScript and Vite from devDependencies.
+      - key: NPM_CONFIG_INCLUDE
+        value: dev
       - key: VITE_API_URL
         value: https://acp-courier2-new.onrender.com/api
       - key: VITE_SHARED_API_URL
