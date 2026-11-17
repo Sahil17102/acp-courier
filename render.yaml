@@ -16,7 +16,7 @@ services:
           name: acp-courier-db-new
           property: connectionString
       - key: ALLOWED_ORIGINS
-        value: https://acp-courier-new.onrender.com,https://acp-courieruser-new.onrender.com,https://acp-courieradmin-new.onrender.com
+        value: https://acp-courier-new.onrender.com,https://acp-courieruser-new.onrender.com,https://acp-courieruser.onrender.com,https://acp-courieradmin-new.onrender.com
       - key: PUBLIC_API_URL
         value: https://acp-courier2-new.onrender.com
       - key: OTP_SECRET

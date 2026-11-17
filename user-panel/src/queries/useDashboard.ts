@@ -10,5 +10,9 @@ export function useDashboard(filters?: DashboardFilters) {
     queryFn: () => dashboardApi.getSummary(filters),
     staleTime: 60_000,
     refetchInterval: 5 * 60_000,
+    retry: 0,
+    // The summary helper returns a valid zero-order dashboard if the API is
+    // unavailable, so retries only prolong the skeleton screen.
+    retryOnMount: false,
   });
 }

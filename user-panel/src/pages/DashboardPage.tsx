@@ -313,7 +313,7 @@ export function DashboardPage() {
 
   const { data: dashboard, isLoading, error } = useDashboard(filters);
 
-  if (isLoading) {
+  if (isLoading && !dashboard) {
     return (
       <div className="max-w-7xl mx-auto space-y-5">
         {/* Header skeleton */}
@@ -383,7 +383,7 @@ export function DashboardPage() {
     );
   }
 
-  if (error || !dashboard) {
+  if (!dashboard) {
     return (
       <div className="max-w-7xl mx-auto">
         <div className="bg-error-bg border border-error/20 rounded-xl p-6 text-center">

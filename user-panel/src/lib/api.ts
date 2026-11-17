@@ -22,7 +22,14 @@ type SessionExpiredListener = () => void;
 let onSessionExpired: SessionExpiredListener | null = null;
 
 const DEFAULT_API_URL = "https://acp-courier2.onrender.com/api";
-const API_BASE_URL = import.meta.env.VITE_API_URL || DEFAULT_API_URL;
+// Existing sellers may still use the original public user-panel URL. Route it
+// to the current API so it cannot show stale KYC and dashboard records.
+const isLegacyUserPanel =
+  typeof window !== "undefined" &&
+  window.location.hostname === "acp-courieruser.onrender.com";
+const API_BASE_URL = isLegacyUserPanel
+  ? "https://acp-courier2-new.onrender.com/api"
+  : import.meta.env.VITE_API_URL || DEFAULT_API_URL;
 const USER_STORAGE_KEY = "shipsy-client-user";
 
 export function setOnSessionExpired(listener: SessionExpiredListener | null): void {
@@ -33,7 +40,9 @@ export function setOnSessionExpired(listener: SessionExpiredListener | null): vo
 
 export const api = axios.create({
   baseURL: import.meta.env.DEV ? "/api" : API_BASE_URL,
-  timeout: 60_000,
+  // Do not leave dashboard cards in a permanent loading state while a free
+  // Render instance wakes up. Each screen has a safe empty-state fallback.
+  timeout: 12_000,
   headers: { "Content-Type": "application/json" },
   withCredentials: true, // required for the httpOnly refresh cookie to be sent
 });
