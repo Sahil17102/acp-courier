@@ -1,5 +1,4 @@
 import { api } from "./api";
-import { shouldUseStaticClientData } from "./staticMode";
 
 const STATIC_WALLET_TRANSACTIONS_KEY = "shipsy-static-wallet-transactions";
 const STATIC_WALLET_ID = "wallet-demo-client-user";
@@ -145,12 +144,8 @@ function filterStaticTransactions(
 
 export const walletApi = {
   getBalance: async (): Promise<WalletBalance> => {
-    try {
-      const { data } = await api.get<WalletBalance>("/wallet/balance");
-      return data;
-    } catch {
-      return { balance: getStaticBalance(), currency: "INR" };
-    }
+    const { data } = await api.get<WalletBalance>("/wallet/balance");
+    return data;
   },
 
   getTransactions: async (params?: {
@@ -163,24 +158,11 @@ export const walletApi = {
     sortField?: string;
     sortOrder?: string;
   }): Promise<WalletTransactionsResponse> => {
-    try {
-      const { data } = await api.get<WalletTransactionsResponse>("/wallet/transactions", { params });
-      return data;
-    } catch {
-      return filterStaticTransactions(readStaticTransactions(), params);
-    }
+    const { data } = await api.get<WalletTransactionsResponse>("/wallet/transactions", { params });
+    return data;
   },
 
   createRechargeOrder: async (amount: number): Promise<CreateRechargeOrderResponse> => {
-    if (shouldUseStaticClientData()) {
-      return {
-        orderId: `demo_order_${Date.now()}`,
-        amount,
-        currency: "INR",
-        keyId: "",
-      };
-    }
-
     const { data } = await api.post<CreateRechargeOrderResponse>(
       "/wallet/recharge/create-order",
       { amount },
@@ -193,11 +175,6 @@ export const walletApi = {
     razorpayPaymentId: string;
     razorpaySignature: string;
   }): Promise<VerifyRechargeResponse> => {
-    if (shouldUseStaticClientData()) {
-      const amount = Number(payload.razorpaySignature) || 0;
-      return walletApi.rechargeStatic(amount);
-    }
-
     const { data } = await api.post<VerifyRechargeResponse>(
       "/wallet/recharge/verify",
       payload,

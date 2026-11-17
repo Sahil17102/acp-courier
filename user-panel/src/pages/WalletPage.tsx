@@ -9,7 +9,6 @@ import {
   useWalletTransactions,
   useCreateRechargeOrder,
   useVerifyRecharge,
-  useStaticWalletRecharge,
 } from "@/queries/useWallet";
 import { useDeferredFilters } from "@/hooks/useDeferredFilters";
 import { ResponsiveTable, CollapsibleFilters } from "@/components/common";
@@ -23,7 +22,6 @@ import {
 import type { WalletTransaction } from "@/lib/walletApi";
 import { formatCurrency, formatKeyword } from "@/lib/utils";
 import { loadRazorpayScript, openRazorpayCheckout } from "@/lib/razorpay";
-import { shouldUseStaticClientData } from "@/lib/staticMode";
 
 // ── Constants ──
 
@@ -73,7 +71,6 @@ export function WalletPage() {
 
   const createOrder = useCreateRechargeOrder();
   const verifyRecharge = useVerifyRecharge();
-  const staticRecharge = useStaticWalletRecharge();
 
   const transactions = txnData?.transactions ?? [];
   const pagination = txnData?.pagination;
@@ -110,16 +107,6 @@ export function WalletPage() {
     setIsProcessing(true);
 
     try {
-      if (shouldUseStaticClientData()) {
-        const result = await staticRecharge.mutateAsync(numAmount);
-        toast.success(`${formatCurrency(result.creditedAmount)} added to wallet`, {
-          description: `New balance: ${formatCurrency(result.balance)}`,
-        });
-        setAmount("");
-        setIsProcessing(false);
-        return;
-      }
-
       await loadRazorpayScript();
       const order = await createOrder.mutateAsync(numAmount);
 
@@ -161,7 +148,7 @@ export function WalletPage() {
       toast.error(err instanceof Error ? err.message : "Failed to initiate payment");
       setIsProcessing(false);
     }
-  }, [amount, user, createOrder, verifyRecharge, staticRecharge]);
+  }, [amount, user, createOrder, verifyRecharge]);
 
   return (
     <motion.div
