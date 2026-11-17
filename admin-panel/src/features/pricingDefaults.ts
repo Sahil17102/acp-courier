@@ -22,9 +22,9 @@ export const DEFAULT_B2B_ZONES: B2bZone[] = [
 
 export function defaultCouriers(): CourierListItem[] {
   return [
-    makeCourier("teampafex:80", "DLVY Standard", "b2c"),
-    makeCourier("teampafex:152", "Delhivery B2B", "b2b"),
-    makeCourier("teampafex:161", "Shadowfax", "b2c"),
+    makeCourier("delhivery:b2c-surface", "Delhivery B2C Surface", "b2c", "delhivery", "Delhivery", true),
+    makeCourier("delhivery:b2b-ltl", "Delhivery B2B LTL", "b2b", "delhivery", "Delhivery", false),
+    makeCourier("shadowfax:b2c-surface", "Shadowfax B2C Surface", "b2c", "shadowfax", "Shadowfax", false),
   ];
 }
 
@@ -38,7 +38,8 @@ export function defaultCourierResponse(params?: {
   const filtered = defaultCouriers().filter((courier) => {
     if (params?.serviceProvider && courier.serviceProvider !== params.serviceProvider) return false;
     if (params?.businessType && !courier.businessType.includes(params.businessType.toLowerCase())) return false;
-    if (params?.isEnabled === "false") return false;
+    if (params?.isEnabled === "true" && !courier.isEnabled) return false;
+    if (params?.isEnabled === "false" && courier.isEnabled) return false;
     return true;
   });
   const page = Math.max(1, Number(params?.page ?? 1));
@@ -54,8 +55,8 @@ export function defaultCourierResponse(params?: {
     },
     stats: {
       total: filtered.length,
-      enabled: filtered.length,
-      disabled: 0,
+      enabled: filtered.filter((courier) => courier.isEnabled).length,
+      disabled: filtered.filter((courier) => !courier.isEnabled).length,
       delivery: filtered.length,
     },
   };
@@ -132,7 +133,7 @@ export function defaultB2bZoneRates(params?: {
   originZone?: string;
   destinationZone?: string;
 }): B2bZoneRate[] {
-  const courier = makeCourier("teampafex:152", "Delhivery B2B", "b2b");
+  const courier = makeCourier("delhivery:b2b-ltl", "Delhivery B2B LTL", "b2b", "delhivery", "Delhivery", false);
   const baseRates: Record<string, Record<string, number>> = {
     N: { N: 42, W: 52, S: 62, E: 58, NE: 78 },
     W: { N: 52, W: 44, S: 54, E: 62, NE: 82 },
@@ -192,7 +193,7 @@ export function defaultB2bPincodes(params?: {
   const west = DEFAULT_B2B_ZONES[1];
   const south = DEFAULT_B2B_ZONES[2];
   const east = DEFAULT_B2B_ZONES[3];
-  const courier = makeCourier("teampafex:152", "Delhivery B2B", "b2b");
+  const courier = makeCourier("delhivery:b2b-ltl", "Delhivery B2B LTL", "b2b", "delhivery", "Delhivery", false);
   const rows: B2bPincode[] = [
     makeB2bPincode("110001", "New Delhi", "Delhi", north, courier),
     makeB2bPincode("400001", "Mumbai", "Maharashtra", west, courier),
@@ -227,7 +228,7 @@ export function defaultB2bAdditionalCharges(params?: {
   courier?: string;
   plan?: string;
 }): B2bAdditionalCharge[] {
-  const courier = makeCourier("teampafex:152", "Delhivery B2B", "b2b");
+  const courier = makeCourier("delhivery:b2b-ltl", "Delhivery B2B LTL", "b2b", "delhivery", "Delhivery", false);
   const charge: B2bAdditionalCharge = {
     id: "seed-b2b-additional-delhivery-b2b-basic",
     plan: "basic",
@@ -269,15 +270,22 @@ export function defaultB2bAdditionalCharges(params?: {
   return [charge];
 }
 
-function makeCourier(id: string, name: string, businessType: "b2b" | "b2c"): CourierListItem {
+function makeCourier(
+  id: string,
+  name: string,
+  businessType: "b2b" | "b2c",
+  serviceProvider: string,
+  serviceProviderDisplayName: string,
+  isEnabled: boolean,
+): CourierListItem {
   return {
     id,
     name,
-    serviceProvider: "teampafex",
-    serviceProviderDisplayName: "Teampafex",
+    serviceProvider,
+    serviceProviderDisplayName,
     courierType: "delivery",
     businessType: [businessType],
-    isEnabled: true,
+    isEnabled,
     logo: null,
     createdAt: CREATED_AT,
     updatedAt: CREATED_AT,
@@ -286,26 +294,67 @@ function makeCourier(id: string, name: string, businessType: "b2b" | "b2c"): Cou
 
 function defaultB2cPricing(): B2cPricingItem[] {
   return [
-    makeB2cPricing("teampafex:80", "DLVY Standard", "surface", [
+    makeB2cPricing("delhivery:b2c-surface", "Delhivery B2C Surface", "delhivery", "surface", [
       [38, 32, 45, 2],
       [45, 38, 45, 2],
       [58, 48, 45, 2],
       [72, 58, 45, 2],
       [95, 75, 45, 2],
     ]),
-    makeB2cPricing("teampafex:161", "Shadowfax", "surface", [
-      [34, 28, 40, 2],
-      [42, 34, 40, 2],
-      [54, 44, 40, 2],
-      [70, 56, 40, 2],
-      [98, 78, 40, 2],
-    ]),
   ];
+}
+
+export function calculateDefaultB2cRates(params: Record<string, unknown>) {
+  const origin = String(params.origin || "");
+  const destination = String(params.destination || "");
+  const weight = Math.max(Number(params.weight || 0), 1);
+  const orderAmount = Math.max(Number(params.orderAmount || 0), 0);
+  const isCod = String(params.paymentType || "").toLowerCase() === "cod";
+  const zoneCode = origin === destination
+    ? "A"
+    : origin[0] === destination[0]
+      ? "B"
+      : /^(7[89]|1[7-9])/.test(origin) || /^(7[89]|1[7-9])/.test(destination)
+        ? "E"
+        : "D";
+
+  return defaultB2cPricing().flatMap((item) => {
+    const slabIndex = item.weightSlabs.findIndex((slab) =>
+      weight >= slab.minWeight && (slab.maxWeight == null || weight <= slab.maxWeight),
+    );
+    const resolvedSlabIndex = slabIndex >= 0 ? slabIndex : item.weightSlabs.length - 1;
+    const zone = item.zoneRates.find((row) => row.zone.code === zoneCode) ?? item.zoneRates[0];
+    const rate = zone?.slabRates[resolvedSlabIndex];
+    if (!zone || !rate) return [];
+    const codCharges = isCod ? Math.max(rate.codCharges, orderAmount * rate.codPercent / 100) : 0;
+    const totalCharge = Math.round((rate.forward + codCharges + item.otherCharges) * 100) / 100;
+    return [{
+      courierId: item.courier.id,
+      name: item.courier.name,
+      serviceProvider: item.courier.serviceProvider,
+      serviceProviderDisplayName: "Delhivery",
+      logo: null,
+      mode: item.mode,
+      zone: { code: zone.zone.code, name: zone.zone.name },
+      chargeableWeight: weight,
+      minWeight: item.weightSlabs[resolvedSlabIndex]?.minWeight ?? 0,
+      rate: {
+        forward: rate.forward,
+        rto: rate.rto,
+        codCharges,
+        otherCharges: item.otherCharges,
+        freightCharge: rate.forward,
+        totalCharge,
+      },
+      tag: "economy" as const,
+    }];
+  });
 }
 
 function makeB2cPricing(
   courierId: string,
   courierName: string,
+  serviceProvider: string,
   mode: "air" | "surface",
   zoneRates: Array<[number, number, number, number]>,
 ): B2cPricingItem {
@@ -321,7 +370,7 @@ function makeB2cPricing(
     courier: {
       id: courierId,
       name: courierName,
-      serviceProvider: "teampafex",
+      serviceProvider,
     },
     plan: "basic",
     mode,

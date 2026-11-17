@@ -268,8 +268,6 @@ function makeFallbackB2cRates(params: AvailableCouriersParams, shared: SharedCou
   const cod = codCharge(params.paymentType, params.orderAmount);
   const defaults: SharedCourier[] = [
     { id: "delhivery:b2c-surface", name: "Delhivery B2C Surface", serviceProvider: "delhivery", serviceProviderDisplayName: "Delhivery" },
-    { id: "fship:surface", name: "FShip Surface", serviceProvider: "fship", serviceProviderDisplayName: "FShip" },
-    { id: "logixmitra:surface", name: "Delivery Surface", serviceProvider: "logixmitra", serviceProviderDisplayName: "Delivery" },
   ];
   const options = (shared.length > 0 ? shared : defaults).map((item, index) => ({
     courierId: item.id,
@@ -291,7 +289,7 @@ function makeFallbackB2cRates(params: AvailableCouriersParams, shared: SharedCou
       serviceProviderDisplayName: option.displayName,
       logo: null,
       mode: "surface",
-      zone: { code: "TPX", name: "Teampafex Live Courier" },
+      zone: { code: "ACP", name: `${option.displayName} configured rate` },
       chargeableWeight: chargeableGrams,
       minWeight: 500,
       rate: {
@@ -302,7 +300,7 @@ function makeFallbackB2cRates(params: AvailableCouriersParams, shared: SharedCou
         freightCharge: freight,
         totalCharge: total,
       },
-      tag: index === 1 ? "economy" : undefined,
+      tag: index === 0 ? "economy" : undefined,
     };
   });
 }

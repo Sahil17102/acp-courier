@@ -1,4 +1,5 @@
 import type { AxiosAdapter, AxiosResponse, InternalAxiosRequestConfig } from "axios";
+import { calculateDefaultB2cRates } from "@/features/pricingDefaults";
 
 const EMPTY_PAGINATION = { page: 1, limit: 20, total: 0, totalPages: 0 };
 const EMPTY_ORDER_STATS = {
@@ -70,7 +71,7 @@ export const staticAdminAdapter: AxiosAdapter = async (config) => {
   const body = parseBody(config);
 
   if (path === "/dashboard") return response(config, EMPTY_DASHBOARD);
-  if (path === "/rates/available") return response(config, { success: true, data: [] });
+  if (path === "/rates/available") return response(config, { success: true, data: calculateDefaultB2cRates(body) });
 
   if (path === "/orders/ndr/list" || path === "/orders/rto/list") {
     return response(config, { orders: [], total: 0 });

@@ -50,13 +50,54 @@ const PRICING_COURIERS = {
   "manual:161": { id: "manual:161", name: "Local Express", serviceProvider: "manual", displayName: "Manual" },
 };
 
+function defaultDelhiveryB2cPricing() {
+  const weightSlabs = [
+    { minWeight: 0, maxWeight: 500 },
+    { minWeight: 500, maxWeight: 1000 },
+    { minWeight: 1000, maxWeight: 2000 },
+    { minWeight: 2000, maxWeight: 5000 },
+    { minWeight: 5000, maxWeight: null },
+  ];
+  const zoneBases = {
+    A: [38, 32, 45, 2], B: [45, 38, 45, 2], C: [58, 48, 45, 2],
+    D: [72, 58, 45, 2], E: [95, 75, 45, 2],
+  };
+  const zoneRates = Object.values(B2C_ZONE_META).map((zone) => {
+    const base = zoneBases[zone.code];
+    return {
+      zone: zone.id,
+      slabRates: weightSlabs.map((_, index) => ({
+        forward: Math.round(base[0] * (index + 1)),
+        rto: Math.round(base[1] * (index + 1)),
+        codCharges: base[2],
+        codPercent: base[3],
+      })),
+    };
+  });
+  return {
+    id: "seed-b2c-delhivery-surface-basic",
+    courierId: "delhivery:b2c-surface",
+    plan: "basic",
+    mode: "surface",
+    otherCharges: 0,
+    weightSlabs,
+    zoneRates,
+    createdAt: "2026-09-03T00:00:00.000Z",
+    updatedAt: "2026-11-17T00:00:00.000Z",
+  };
+}
+
 function emptyPricingStore() {
-  return { b2cPricing: [], b2cZones: [], b2bZones: [], b2bPincodes: [], b2bZoneRates: [], b2bAdditionalCharges: [] };
+  return { b2cPricing: [defaultDelhiveryB2cPricing()], b2cZones: [], b2bZones: [], b2bPincodes: [], b2bZoneRates: [], b2bAdditionalCharges: [] };
 }
 
 function loadPricingStore() {
   try {
-    return { ...emptyPricingStore(), ...JSON.parse(fs.readFileSync(pricingStoreFile, "utf8")) };
+    const stored = { ...emptyPricingStore(), ...JSON.parse(fs.readFileSync(pricingStoreFile, "utf8")) };
+    if (!Array.isArray(stored.b2cPricing) || stored.b2cPricing.length === 0) {
+      stored.b2cPricing = [defaultDelhiveryB2cPricing()];
+    }
+    return stored;
   } catch {
     return emptyPricingStore();
   }
