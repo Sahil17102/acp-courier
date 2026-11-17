@@ -129,7 +129,12 @@ export default function ServiceProvidersPage() {
     {
       title: "B2C Credentials",
       key: "b2c",
-      render: (_, record) => <CredentialBadge configured={record.b2c.configured} label="Configured" />,
+      render: (_, record) => (
+        <CredentialBadge
+          configured={record.b2c.configured}
+          label={record.serviceProvider === "delhivery" ? "Connected" : "Configured"}
+        />
+      ),
     },
     {
       title: "B2B Credentials",

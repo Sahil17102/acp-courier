@@ -12,6 +12,9 @@ const TEAMPAFEX_PROVIDER_ID = "sp-teampafex";
 const TEAMPAFEX_BASE_URL = "https://teampafex.in";
 const SHADOWFAX_PROVIDER_ID = "sp-shadowfax";
 const SHADOWFAX_BASE_URL = "https://dale.shadowfax.in/api";
+const DELHIVERY_PROVIDER_ID = "sp-delhivery";
+const DELHIVERY_B2C_BASE_URL = "https://track.delhivery.com";
+const DELHIVERY_B2B_BASE_URL = "https://ltl-clients-api.delhivery.com";
 
 interface CredentialBlockPayload {
   values: Record<string, string>;
@@ -88,6 +91,24 @@ function defaultShadowfaxProvider(): ProviderListItem {
   };
 }
 
+function defaultDelhiveryProvider(): ProviderListItem {
+  const updatedAt = nowIso();
+  return {
+    id: DELHIVERY_PROVIDER_ID,
+    serviceProvider: "delhivery",
+    displayName: "Delhivery",
+    logoUrl: "",
+    totalCouriers: 2,
+    enabledCouriers: 1,
+    serviceProviderDisplayName: "Delhivery",
+    isEnabled: true,
+    b2c: { configured: true },
+    b2b: { configured: false, sameAsB2c: false },
+    status: "active",
+    updatedAt,
+  };
+}
+
 function defaultCredentials(): ProviderCredentialsResponse {
   const fields: CredentialFieldDef[] = [
     { key: "baseUrl", label: "Base URL", type: "text", required: true },
@@ -140,6 +161,38 @@ function defaultShadowfaxCredentials(): ProviderCredentialsResponse {
   };
 }
 
+function defaultDelhiveryCredentials(): ProviderCredentialsResponse {
+  return {
+    b2c: {
+      fields: [
+        { key: "baseUrl", label: "Production Base URL", type: "text", required: true },
+        { key: "apiToken", label: "API Token", type: "password", required: true },
+        { key: "pickupName", label: "Registered Pickup", type: "text", required: true },
+      ],
+      description: "Connected server-side through the ACP Render backend. The live token is masked and never stored in this browser.",
+      values: {
+        baseUrl: DELHIVERY_B2C_BASE_URL,
+        apiToken: "********",
+        pickupName: "ARORACOURIER C2C",
+      },
+    },
+    b2b: {
+      fields: [
+        { key: "baseUrl", label: "B2B Base URL", type: "text", required: true },
+        { key: "username", label: "B2B Username", type: "text", required: true },
+        { key: "password", label: "B2B Password", type: "password", required: true },
+      ],
+      description: "Delhivery B2B LTL requires a separate UMS username and password to generate its 24-hour Bearer token.",
+      values: {
+        baseUrl: DELHIVERY_B2B_BASE_URL,
+        username: "",
+        password: "",
+      },
+      sameAsB2c: false,
+    },
+  };
+}
+
 function isListProvidersResponse(data: unknown): data is ListProvidersResponse {
   const value = data as Partial<ListProvidersResponse> | null;
   return Boolean(
@@ -152,7 +205,7 @@ function isListProvidersResponse(data: unknown): data is ListProvidersResponse {
 
 function readStaticProviders(): ProviderListItem[] {
   const providers = readJson<ProviderListItem[]>(STATIC_SERVICE_PROVIDERS_KEY, []);
-  const seeds = [defaultProvider(), defaultShadowfaxProvider()];
+  const seeds = [defaultProvider(), defaultShadowfaxProvider(), defaultDelhiveryProvider()];
   let next = providers;
   for (const seed of seeds) {
     const existing = next.find(
@@ -166,8 +219,14 @@ function readStaticProviders(): ProviderListItem[] {
                 ...provider,
                 totalCouriers: Math.max(provider.totalCouriers || 0, seed.totalCouriers),
                 enabledCouriers: Math.max(provider.enabledCouriers || 0, seed.enabledCouriers),
-                b2c: provider.id === TEAMPAFEX_PROVIDER_ID ? { ...provider.b2c, configured: true } : provider.b2c,
-                b2b: provider.id === TEAMPAFEX_PROVIDER_ID ? { ...provider.b2b, configured: true, sameAsB2c: provider.b2b.sameAsB2c ?? true } : provider.b2b,
+                b2c: ["teampafex", "delhivery"].includes(provider.serviceProvider)
+                  ? { ...provider.b2c, configured: true }
+                  : provider.b2c,
+                b2b: provider.serviceProvider === "teampafex"
+                  ? { ...provider.b2b, configured: true, sameAsB2c: provider.b2b.sameAsB2c ?? true }
+                  : provider.serviceProvider === "delhivery"
+                    ? { ...provider.b2b, configured: false, sameAsB2c: false }
+                    : provider.b2b,
                 status: provider.status ?? seed.status,
                 isEnabled: provider.isEnabled ?? seed.isEnabled,
               }
@@ -184,7 +243,11 @@ function writeStaticProviders(providers: ProviderListItem[]): ProviderListItem[]
 
 function readStaticCredentials(providerId: string): ProviderCredentialsResponse {
   const all = readJson<Record<string, ProviderCredentialsResponse>>(STATIC_SERVICE_PROVIDER_CREDS_KEY, {});
-  const fallback = providerId === SHADOWFAX_PROVIDER_ID ? defaultShadowfaxCredentials() : defaultCredentials();
+  const fallback = providerId === SHADOWFAX_PROVIDER_ID
+    ? defaultShadowfaxCredentials()
+    : providerId === DELHIVERY_PROVIDER_ID
+      ? defaultDelhiveryCredentials()
+      : defaultCredentials();
   const creds = all[providerId] ?? (providerId === TEAMPAFEX_PROVIDER_ID ? all[TEAMPAFEX_PROVIDER_ID] : undefined) ?? fallback;
   const merged: ProviderCredentialsResponse = {
     b2c: { ...fallback.b2c, ...creds.b2c, values: { ...fallback.b2c.values, ...creds.b2c?.values } },
