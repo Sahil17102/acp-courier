@@ -88,10 +88,10 @@ export const lightColors: ColorPalette = {
   skeletonVia: "#DCE9FF",
 
   heroLightStart: "#EFF6FF",
-  heroLightEnd: "#ECFEFF",
+  heroLightEnd: "#FFF2E5",
 
   heroDotColor: "rgba(96, 165, 250, 0.22)",
-  heroLightDotColor: "rgba(37, 99, 235, 0.055)",
+  heroLightDotColor: "rgba(243, 107, 0, 0.07)",
 
   surfaceMuted: "#F2F7FF",
 

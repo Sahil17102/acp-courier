@@ -11,6 +11,7 @@ import type {
 } from "./types";
 
 const useStaticData = import.meta.env.VITE_STATIC_DATA_ENABLED === "true";
+const sharedApiUrl = (import.meta.env.VITE_API_URL || "https://acp-courier2-new.onrender.com/api").replace(/\/+$/, "");
 const STATIC_WALLET_TRANSACTIONS_KEY = "acp-static-wallet-transactions";
 const STATIC_WALLET_ID = "wallet-demo-client-user";
 
@@ -148,6 +149,12 @@ export const walletsApi = {
 
   getByUserId: async (userId: string) => {
     if (useStaticData) {
+      try {
+        const response = await fetch(`${sharedApiUrl}/admin/wallets/${encodeURIComponent(userId)}`, { cache: "no-store", signal: AbortSignal.timeout(10_000) });
+        if (response.ok) return await response.json() as { wallet: WalletListItem };
+      } catch {
+        // Render wake-up fallback remains available below.
+      }
       return { wallet: walletForUser(userId) };
     }
 

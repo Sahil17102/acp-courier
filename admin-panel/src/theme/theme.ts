@@ -65,7 +65,7 @@ export interface ColorPalette {
 export const lightColors: ColorPalette = {
   primary: "#092D59",
   primaryHover: "#0D407D",
-  primaryBg: "rgba(9, 45, 89, 0.10)",
+  primaryBg: "rgba(9, 45, 89, 0.08)",
   primaryLight: "#DDEAF7",
 
   accent: "#F36B00",
@@ -79,7 +79,7 @@ export const lightColors: ColorPalette = {
   border: "#D7E0EA",
   borderLight: "rgba(196, 210, 224, 0.72)",
 
-  bg: "#F7FAFF",
+  bg: "#F8FAFD",
   bgElevated: "#FFFFFF",
 
   heroDark: "#071E3A",
@@ -91,7 +91,7 @@ export const lightColors: ColorPalette = {
   skeletonVia: "#DCE9FF",
 
   heroLightStart: "#EEF5FB",
-  heroLightEnd: "#FFF4E8",
+  heroLightEnd: "#FFF2E5",
 
   heroDotColor: "rgba(243, 107, 0, 0.22)",
   heroLightDotColor: "rgba(9, 45, 89, 0.055)",

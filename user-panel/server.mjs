@@ -20,6 +20,7 @@ const dataDir = process.env.DATA_DIR || path.join(root, "data");
 const database = await startDatabasePersistence(dataDir);
 const notificationsFile = path.join(dataDir, "notifications.json");
 const walletLedgerFile = path.join(dataDir, "wallet-ledger.json");
+const pickupAddressesFile = path.join(dataDir, "pickup-addresses.json");
 const razorpayOrdersFile = path.join(dataDir, "razorpay-orders.json");
 const pricingStoreFile = path.join(dataDir, "pricing-store.json");
 const sellerRegistry = createSellerRegistry(dataDir);
@@ -1050,6 +1051,89 @@ function walletBalance(transactions, userId) {
     .filter((transaction) => String(transaction.userId) === String(userId))
     .reduce((total, transaction) => total + (transaction.type === "credit" ? Number(transaction.amount || 0) : -Number(transaction.amount || 0)), 0);
 }
+
+function pickupAddresses() {
+  const value = readJsonFile(pickupAddressesFile, { addresses: [] });
+  return { addresses: Array.isArray(value.addresses) ? value.addresses : [] };
+}
+
+function savePickupAddresses(addresses) {
+  writeJsonFile(pickupAddressesFile, { addresses });
+}
+
+function userPickupAddresses(userId) {
+  return pickupAddresses().addresses.filter((address) => String(address.userId) === String(userId));
+}
+
+app.get("/api/pickup-addresses", (req, res) => {
+  const seller = requestSeller(req);
+  if (!seller) return res.status(401).json({ message: "Seller identity is required" });
+  return res.json({ addresses: userPickupAddresses(seller.id) });
+});
+
+app.get("/api/pickup-addresses/:id", (req, res) => {
+  const seller = requestSeller(req);
+  const address = seller && userPickupAddresses(seller.id).find((item) => String(item.id) === String(req.params.id));
+  if (!address) return res.status(404).json({ message: "Pickup address not found" });
+  return res.json({ address });
+});
+
+app.post("/api/pickup-addresses", (req, res) => {
+  const seller = requestSeller(req);
+  if (!seller) return res.status(401).json({ message: "Seller identity is required" });
+  const now = new Date().toISOString();
+  const all = pickupAddresses().addresses;
+  const existing = all.filter((item) => String(item.userId) === String(seller.id));
+  const body = req.body || {};
+  const address = {
+    ...body, id: crypto.randomUUID(), userId: seller.id, addressType: "pickup",
+    isPrimary: existing.length === 0, isActive: true, createdAt: now, updatedAt: now,
+  };
+  savePickupAddresses([address, ...all]);
+  return res.status(201).json({ message: "Pickup address created successfully", address });
+});
+
+app.put("/api/pickup-addresses/:id", (req, res) => {
+  const seller = requestSeller(req);
+  const all = pickupAddresses().addresses;
+  const current = seller && all.find((item) => String(item.id) === String(req.params.id) && String(item.userId) === String(seller.id));
+  if (!current) return res.status(404).json({ message: "Pickup address not found" });
+  const address = { ...current, ...(req.body || {}), id: current.id, userId: current.userId, updatedAt: new Date().toISOString() };
+  savePickupAddresses(all.map((item) => String(item.id) === String(address.id) ? address : item));
+  return res.json({ message: "Pickup address updated", address });
+});
+
+app.patch("/api/pickup-addresses/:id/primary", (req, res) => {
+  const seller = requestSeller(req);
+  const all = pickupAddresses().addresses;
+  const current = seller && all.find((item) => String(item.id) === String(req.params.id) && String(item.userId) === String(seller.id));
+  if (!current) return res.status(404).json({ message: "Pickup address not found" });
+  const updated = all.map((item) => String(item.userId) === String(seller.id) ? { ...item, isPrimary: String(item.id) === String(current.id), updatedAt: new Date().toISOString() } : item);
+  savePickupAddresses(updated);
+  return res.json({ message: "Primary pickup address updated", address: updated.find((item) => String(item.id) === String(current.id)) });
+});
+
+app.delete("/api/pickup-addresses/:id", (req, res) => {
+  const seller = requestSeller(req);
+  const all = pickupAddresses().addresses;
+  const current = seller && all.find((item) => String(item.id) === String(req.params.id) && String(item.userId) === String(seller.id));
+  if (!current) return res.status(404).json({ message: "Pickup address not found" });
+  savePickupAddresses(all.filter((item) => String(item.id) !== String(current.id)));
+  return res.json({ message: "Pickup address removed" });
+});
+
+app.get("/api/admin/users/:userId/pickup-addresses", (req, res) => res.json({ addresses: userPickupAddresses(req.params.userId) }));
+
+app.get("/api/admin/wallets/:userId", (req, res) => {
+  const seller = sellerRegistry.list().find((item) => String(item.id) === String(req.params.userId));
+  if (!seller) return res.status(404).json({ message: "Seller not found" });
+  const transactions = walletLedger().transactions.filter((transaction) => String(transaction.userId) === String(seller.id));
+  return res.json({ wallet: {
+    id: `wallet-${seller.id}`, userId: seller.id, userName: seller.name || null, userEmail: seller.email || null,
+    userPhone: seller.phone || null, businessName: seller.businessName || null, balance: walletBalance(transactions, seller.id),
+    currency: "INR", plan: seller.plan || "basic", isActive: seller.isActive !== false, createdAt: seller.createdAt, updatedAt: seller.updatedAt,
+  } });
+});
 
 function razorpayAuthorization() {
   return `Basic ${Buffer.from(`${requireEnv("RAZORPAY_KEY_ID")}:${requireEnv("RAZORPAY_KEY_SECRET")}`).toString("base64")}`;
