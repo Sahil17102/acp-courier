@@ -23,6 +23,10 @@ services:
         generateValue: true
       - key: OTP_DISPLAY_ENABLED
         value: "true"
+      - key: DELHIVERY_API_TOKEN
+        sync: false
+      - key: DELHIVERY_PICKUP_NAME
+        value: ARORACOURIER C2C
 
   - type: web
     runtime: static
@@ -43,6 +47,24 @@ services:
       - key: VITE_SHARED_API_URL
         value: https://acp-courier2-new.onrender.com/api
       - key: VITE_STATIC_DATA_ENABLED
+        value: "false"
+      - key: VITE_DELHIVERY_PICKUP_NAME
+        value: ARORACOURIER C2C
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+
+  - type: web
+    runtime: static
+    name: acp-courieradmin-new
+    rootDir: admin-panel
+    buildCommand: npm ci && npm run build
+    staticPublishPath: dist
+    envVars:
+      - key: VITE_STATIC_DATA_ENABLED
+        value: "true"
+      - key: VITE_COURIER_API_ENABLED
         value: "false"
     routes:
       - type: rewrite

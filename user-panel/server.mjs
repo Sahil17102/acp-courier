@@ -365,6 +365,50 @@ function requireAnyEnv(...names) {
   throw error;
 }
 
+function requireDelhiveryToken() {
+  return requireAnyEnv("DELHIVERY_API_TOKEN", "DELHIVERY_TOKEN");
+}
+
+const delhiveryB2bBaseUrl = String(process.env.DELHIVERY_B2B_API_URL || "https://ltl-clients-api.delhivery.com").replace(/\/+$/, "");
+let delhiveryB2bSession = { token: "", expiresAt: 0 };
+
+async function getDelhiveryB2bToken(force = false) {
+  const configuredToken = String(process.env.DELHIVERY_B2B_BEARER_TOKEN || "").trim();
+  if (configuredToken) return configuredToken.replace(/^Bearer\s+/i, "");
+  if (!force && delhiveryB2bSession.token && delhiveryB2bSession.expiresAt > Date.now()) return delhiveryB2bSession.token;
+  const response = await fetch(`${delhiveryB2bBaseUrl}/ums/login`, {
+    method: "POST",
+    headers: { Accept: "application/json", "Content-Type": "application/json" },
+    body: JSON.stringify({ username: requireEnv("DELHIVERY_B2B_USERNAME"), password: requireEnv("DELHIVERY_B2B_PASSWORD") }),
+  });
+  const { body } = await readUpstream(response);
+  const token = String(body?.token || body?.access_token || body?.data?.token || body?.data?.access_token || "").trim();
+  if (!response.ok || !token) throw Object.assign(new Error(upstreamErrorMessage(body, "Delhivery B2B login failed")), { status: response.status || 502 });
+  delhiveryB2bSession = { token: token.replace(/^Bearer\s+/i, ""), expiresAt: Date.now() + (23 * 60 * 60 * 1000) };
+  return delhiveryB2bSession.token;
+}
+
+function validIndianPincode(value) {
+  return /^\d{6}$/.test(String(value || "").trim());
+}
+
+function delhiveryServiceability(body, pincode) {
+  const codes = Array.isArray(body?.delivery_codes) ? body.delivery_codes : [];
+  const record = codes.find((entry) => String(entry?.postal_code?.pin || "") === String(pincode)) || codes[0];
+  const postalCode = record?.postal_code || null;
+  const remark = String(postalCode?.remark || "").trim();
+  return { pincode: String(pincode), serviceable: Boolean(postalCode) && !/embargo|nsz|non.?serviceable/i.test(remark), embargoed: /embargo/i.test(remark), remark: remark || null, postalCode };
+}
+
+async function fetchDelhiveryServiceability(pincode) {
+  const target = new URL("https://track.delhivery.com/c/api/pin-codes/json/");
+  target.searchParams.set("filter_codes", pincode);
+  const response = await fetch(target, { headers: { Accept: "application/json", Authorization: `Token ${requireDelhiveryToken()}` } });
+  const { body } = await readUpstream(response);
+  if (!response.ok) throw Object.assign(new Error(upstreamErrorMessage(body, `Delhivery serviceability failed (${response.status})`)), { status: response.status || 502 });
+  return delhiveryServiceability(body, pincode);
+}
+
 const legacyShippingApiUrl = String(process.env.FSHIP_API_URL || "").trim();
 const fshipApiBaseUrl = String(legacyShippingApiUrl.includes("logixmitra") ? "https://capi.fship.in" : (legacyShippingApiUrl || "https://capi.fship.in")).replace(/\/+$/, "");
 const deliveryApiBaseUrl = String(process.env.DELIVERY_API_URL || process.env.LOGIXMITRA_API_URL || (legacyShippingApiUrl.includes("logixmitra") ? legacyShippingApiUrl : "") || "https://api.logixmitra.com/api").replace(/\/+$/, "");
@@ -755,8 +799,27 @@ app.post(deliveryPaths("registerpickup"), (_req, res) => {
 });
 
 
+app.get("/api/providers/delhivery/serviceability", async (req, res, next) => {
+  try {
+    if (!hasSellerIdentity(req)) return res.status(401).json({ message: "Sign in before checking serviceability" });
+    const pincode = String(req.query?.pincode || "").trim();
+    if (!validIndianPincode(pincode)) return res.status(400).json({ message: "A valid 6-digit pincode is required" });
+    return res.json(await fetchDelhiveryServiceability(pincode));
+  } catch (error) { next(error); }
+});
+
 app.post("/api/providers/delhivery/create-order", async (req, res, next) => {
   try {
+    if (!hasSellerIdentity(req)) return res.status(401).json({ message: "Sign in before booking a shipment" });
+    const shipments = Array.isArray(req.body?.shipments) ? req.body.shipments : [];
+    const pickupName = String(req.body?.pickup_location?.name || "").trim();
+    if (!shipments.length) return res.status(400).json({ message: "At least one Delhivery shipment is required" });
+    if (!pickupName) return res.status(400).json({ message: "A registered Delhivery pickup location is required" });
+    for (const shipment of shipments) {
+      if (!shipment?.name || !shipment?.phone || !shipment?.add || !shipment?.order || !validIndianPincode(shipment?.pin)) return res.status(400).json({ message: "Shipment name, phone, address, unique order ID and valid pincode are required" });
+      const availability = await fetchDelhiveryServiceability(String(shipment.pin));
+      if (!availability.serviceable) return res.status(422).json({ message: availability.remark || `Pincode ${shipment.pin} is not serviceable by Delhivery`, serviceability: availability });
+    }
     const form = new URLSearchParams({
       format: "json",
       data: JSON.stringify(req.body),
@@ -766,12 +829,55 @@ app.post("/api/providers/delhivery/create-order", async (req, res, next) => {
       headers: {
         Accept: "application/json",
         "Content-Type": "application/x-www-form-urlencoded",
-        Authorization: `Token ${requireEnv("DELHIVERY_TOKEN")}`,
+        Authorization: `Token ${requireDelhiveryToken()}`,
       },
       body: form,
     });
     const { body, contentType } = await readUpstream(response);
     res.status(response.status).type(contentType || "application/json").send(body);
+  } catch (error) { next(error); }
+});
+
+app.post("/api/providers/delhivery/b2b/shipments", async (req, res, next) => {
+  try {
+    if (!hasSellerIdentity(req)) return res.status(401).json({ message: "Sign in before booking a shipment" });
+    const payload = req.body || {};
+    const pickupName = String(payload.pickup_location_name || "").trim();
+    const dropoff = payload.dropoff_location || {};
+    const shipmentDetails = Array.isArray(payload.shipment_details) ? payload.shipment_details : [];
+    const invoices = Array.isArray(payload.invoices) ? payload.invoices : [];
+    if (!pickupName || !validIndianPincode(dropoff.zip) || !shipmentDetails.length || !invoices.length || Number(payload.weight) <= 0) return res.status(400).json({ message: "B2B shipment requires registered pickup name, drop-off pincode, weight, box details and invoice details" });
+    const jsonFields = new Set(["dropoff_location", "return_address", "shipment_details", "dimensions", "callback", "invoices", "doc_data", "billing_address"]);
+    let token = await getDelhiveryB2bToken();
+    const call = () => {
+      const form = new FormData();
+      for (const [key, value] of Object.entries(payload)) {
+        if (value === undefined || value === null || value === "") continue;
+        form.append(key, jsonFields.has(key) ? JSON.stringify(value) : String(value));
+      }
+      return fetch(`${delhiveryB2bBaseUrl}/manifest`, { method: "POST", headers: { Accept: "application/json", Authorization: `Bearer ${token}` }, body: form });
+    };
+    let response = await call();
+    if (response.status === 401 && !process.env.DELHIVERY_B2B_BEARER_TOKEN) { token = await getDelhiveryB2bToken(true); response = await call(); }
+    const { body } = await readUpstream(response);
+    if (!response.ok) return res.status(response.status).json({ message: upstreamErrorMessage(body, "Delhivery B2B shipment creation failed"), provider: "delhivery", details: body });
+    const jobId = String(body?.job_id || body?.jobId || body?.request_id || body?.data?.job_id || body?.data?.request_id || "").trim();
+    return res.status(response.status).json({ success: true, jobId, response: body });
+  } catch (error) { next(error); }
+});
+
+app.get("/api/providers/delhivery/b2b/shipments/:jobId", async (req, res, next) => {
+  try {
+    if (!hasSellerIdentity(req)) return res.status(401).json({ message: "Sign in before checking a shipment" });
+    const jobId = String(req.params.jobId || "").trim();
+    if (!/^[A-Za-z0-9._-]{3,200}$/.test(jobId)) return res.status(400).json({ message: "A valid Delhivery B2B job ID is required" });
+    const target = new URL(`${delhiveryB2bBaseUrl}/manifest`);
+    target.searchParams.set("job_id", jobId);
+    const token = await getDelhiveryB2bToken();
+    const response = await fetch(target, { headers: { Accept: "application/json", Authorization: `Bearer ${token}` } });
+    const { body } = await readUpstream(response);
+    if (!response.ok) return res.status(response.status).json({ message: upstreamErrorMessage(body, "Delhivery B2B shipment status failed"), provider: "delhivery", details: body });
+    return res.status(response.status).json(body);
   } catch (error) { next(error); }
 });
 
@@ -786,14 +892,14 @@ app.post("/api/providers/delhivery/pickup-request", async (req, res, next) => {
     // warehouse name. Never send a past slot: after 3 PM schedule next day.
     const pickupDate = String(req.body?.pickup_date || datePart);
     const pickupTime = String(req.body?.pickup_time || `${String(defaultHour).padStart(2, "0")}:00:00`);
-    const pickupLocation = String(req.body?.pickup_location || process.env.DELHIVERY_PICKUP_NAME || "BILAL");
+    const pickupLocation = String(req.body?.pickup_location || process.env.DELHIVERY_PICKUP_NAME || "ARORACOURIER C2C");
     const expectedPackageCount = Math.max(1, Number(req.body?.expected_package_count || 1));
     const response = await fetch("https://track.delhivery.com/fm/request/new/", {
       method: "POST",
       headers: {
         Accept: "application/json",
         "Content-Type": "application/json",
-        Authorization: `Token ${requireEnv("DELHIVERY_TOKEN")}`,
+        Authorization: `Token ${requireDelhiveryToken()}`,
       },
       body: JSON.stringify({
         pickup_time: pickupTime,
@@ -822,7 +928,7 @@ app.post("/api/providers/delhivery/cancel-order", async (req, res, next) => {
       headers: {
         Accept: "application/json",
         "Content-Type": "application/json",
-        Authorization: `Token ${requireEnv("DELHIVERY_TOKEN")}`,
+        Authorization: `Token ${requireDelhiveryToken()}`,
       },
       body: JSON.stringify({ waybill, cancellation: "true" }),
     });
@@ -844,7 +950,7 @@ app.get("/api/providers/delhivery/track", async (req, res, next) => {
     const response = await fetch(target, {
       headers: {
         Accept: "application/json",
-        Authorization: `Token ${requireEnv("DELHIVERY_TOKEN")}`,
+        Authorization: `Token ${requireDelhiveryToken()}`,
       },
     });
     const { body, contentType } = await readUpstream(response);
@@ -1164,7 +1270,7 @@ async function trackingUpdateFor(order) {
   if (provider === "delhivery") {
     const target = new URL("https://track.delhivery.com/api/v1/packages/json/");
     target.searchParams.set("waybill", awb);
-    const body = await fetchJson(target, { headers: { Accept: "application/json", Authorization: `Token ${requireEnv("DELHIVERY_TOKEN")}` } });
+    const body = await fetchJson(target, { headers: { Accept: "application/json", Authorization: `Token ${requireDelhiveryToken()}` } });
     return newestDelhiveryUpdate(body);
   }
   if (["fship", "logixmitra", "logix_mitra"].includes(provider)) {
@@ -1540,7 +1646,7 @@ app.get("/api/provider-orders/:id/tracking", async (req, res, next) => {
       const target = new URL("https://track.delhivery.com/api/v1/packages/json/");
       target.searchParams.set("waybill", awb);
       const response = await fetch(target, {
-        headers: { Accept: "application/json", Authorization: `Token ${requireEnv("DELHIVERY_TOKEN")}` },
+        headers: { Accept: "application/json", Authorization: `Token ${requireDelhiveryToken()}` },
       });
       const { body } = await readUpstream(response);
       if (!response.ok) return res.status(response.status).send(body);
@@ -1578,7 +1684,7 @@ app.post("/api/provider-orders/:id/cancel", async (req, res, next) => {
         headers: {
           Accept: "application/json",
           "Content-Type": "application/json",
-          Authorization: `Token ${requireEnv("DELHIVERY_TOKEN")}`,
+          Authorization: `Token ${requireDelhiveryToken()}`,
         },
         body: JSON.stringify({ waybill, cancellation: "true" }),
       });

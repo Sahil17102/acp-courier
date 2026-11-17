@@ -137,6 +137,7 @@ interface StoredProviderPickupAddress {
   city?: string;
   state?: string;
   pincode?: string;
+  gstNumber?: string;
   [key: string]: unknown;
 }
 
@@ -495,7 +496,75 @@ async function createConnectedProviderOrder(data: CreateOrderPayload): Promise<O
 }
 
 async function createDelhiveryOrder(data: CreateOrderPayload): Promise<Order> {
-  const pickupName = import.meta.env.VITE_DELHIVERY_PICKUP_NAME || "BILAL";
+  const pickupName = import.meta.env.VITE_DELHIVERY_PICKUP_NAME || "ARORACOURIER C2C";
+  if (data.orderType === "B2B") {
+    let pickup = findStoredPickupAddress(data.pickupAddressId);
+    if (!pickup) {
+      const response = await api.get<{ address?: StoredProviderPickupAddress }>(`/pickup-addresses/${data.pickupAddressId}`);
+      pickup = response.data?.address;
+    }
+    if (!pickup) throw new Error("Selected pickup address could not be loaded for Delhivery B2B");
+    const gstNumber = String(pickup.gstNumber || "").trim();
+    if (!gstNumber && !data.companyGst) throw new Error("Add the pickup warehouse GST number before booking a Delhivery B2B shipment");
+    const boxCount = (data.packages || []).reduce((sum, pkg) => sum + Math.max(1, Math.floor(pkg.quantity || 1)), 0) || 1;
+    const invoices = data.invoices?.length
+      ? data.invoices.map((invoice) => ({ ewaybill: invoice.ebn || "", inv_num: invoice.invoiceNumber, inv_amt: invoice.invoiceValue, inv_qr_code: "" }))
+      : [{ ewaybill: "", inv_num: data.orderId, inv_amt: data.orderAmount, inv_qr_code: "" }];
+    const response = await api.post<{ success: boolean; jobId?: string; response?: unknown }>("/providers/delhivery/b2b/shipments", {
+      pickup_location_name: pickupName,
+      payment_mode: data.paymentType === "cod" ? "cod" : "prepaid",
+      cod_amount: data.paymentType === "cod" ? data.codAmount : undefined,
+      weight: Math.max(1, Math.round(data.weight)),
+      dropoff_location: {
+        consignee_name: data.companyName || data.buyerName,
+        address: [data.address, data.address2].filter(Boolean).join(", "),
+        city: data.city,
+        state: data.state,
+        zip: data.pincode,
+        phone: data.buyerPhone,
+        email: data.buyerEmail || "",
+      },
+      shipment_details: [{
+        order_id: data.orderId,
+        box_count: boxCount,
+        description: data.products.map((product) => product.name).join(", "),
+        weight: Math.max(1, Math.round(data.weight)),
+        waybills: [],
+        master: false,
+      }],
+      invoices,
+      rov_insurance: true,
+      enable_paperless_movement: false,
+      freight_mode: "fop",
+      fm_pickup: true,
+      billing_address: {
+        name: pickup.contactName || pickupName,
+        company: pickupName,
+        consignor: pickupName,
+        address: [pickup.addressLine1, pickup.addressLine2].filter(Boolean).join(", "),
+        city: pickup.city || "",
+        state: pickup.state || "",
+        pin: pickup.pincode || "",
+        phone: pickup.phone || "",
+        gst_number: gstNumber || data.companyGst,
+      },
+    }, { timeout: 60_000 });
+    const jobId = String(response.data.jobId || "");
+    if (!response.data.success || !jobId) throw new Error("Delhivery accepted no B2B manifest job ID");
+    const order: Order & { providerOrderId: string; delhiveryJobId: string } = {
+      ...makeOrderFromPayload(data, jobId, ""),
+      id: jobId,
+      providerOrderId: jobId,
+      delhiveryJobId: jobId,
+      status: "processing",
+      serviceProvider: "delhivery",
+      courierName: data.courierName || "Delhivery B2B LTL",
+    };
+    const existing = courierApi.readStoredOrders<Order & { providerOrderId: string }>();
+    courierApi.writeStoredOrders([order, ...existing.filter((item) => item.id !== order.id)]);
+    await mirrorProviderOrder(order);
+    return order;
+  }
   const shipment = {
     name: data.buyerName,
     add: [data.address, data.address2].filter(Boolean).join(", "),
