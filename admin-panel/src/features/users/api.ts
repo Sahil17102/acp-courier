@@ -88,6 +88,26 @@ function normalizeUser(raw: unknown): UserListItem {
   };
 }
 
+async function fetchLiveUsers(): Promise<UserListItem[] | null> {
+  try {
+    const response = await fetch(`${sharedApiUrl}/sellers`, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(8_000),
+    });
+    if (!response.ok) return null;
+    const payload = await response.json() as { users?: unknown[] };
+    return Array.isArray(payload.users) ? payload.users.map(normalizeUser) : [];
+  } catch {
+    // The Render API can be waking up. Callers retain their local fallback.
+    return null;
+  }
+}
+
+function isSameUser(user: UserListItem, id: string): boolean {
+  const requested = decodeURIComponent(id).trim().toLowerCase();
+  return user.id.trim().toLowerCase() === requested || user.email?.trim().toLowerCase() === requested;
+}
+
 function normalizeSummary(raw: unknown): UserSummary {
   const response = asRecord(raw);
   const summary = asRecord(response.summary ?? raw);
@@ -203,19 +223,8 @@ export const usersApi = {
     sortOrder?: string;
   }): Promise<ListUsersResponse> => {
     if (useStaticData) {
-      try {
-        const response = await fetch(`${sharedApiUrl}/sellers`, {
-          cache: "no-store",
-          signal: AbortSignal.timeout(8_000),
-        });
-        if (response.ok) {
-          const payload = await response.json() as { users?: unknown[] };
-          const liveUsers = Array.isArray(payload.users) ? payload.users.map(normalizeUser) : [];
-          if (liveUsers.length > 0) return filterUsers(liveUsers, params);
-        }
-      } catch {
-        // Render may be waking up; retain the local seller so Admin stays fast.
-      }
+      const liveUsers = await fetchLiveUsers();
+      if (liveUsers && liveUsers.length > 0) return filterUsers(liveUsers, params);
       return filterUsers(readStaticUsers(), params);
     }
 
@@ -229,7 +238,9 @@ export const usersApi = {
 
   getById: async (id: string): Promise<{ user: UserListItem }> => {
     if (useStaticData) {
-      const user = readStaticUsers().find((item) => item.id === id);
+      const liveUsers = await fetchLiveUsers();
+      const user = liveUsers?.find((item) => isSameUser(item, id))
+        ?? readStaticUsers().find((item) => isSameUser(item, id));
       if (!user) throw new Error("User not found");
       return { user: normalizeUser(user) };
     }
@@ -241,6 +252,17 @@ export const usersApi = {
 
   toggleActive: async (id: string): Promise<{ message: string }> => {
     if (useStaticData) {
+      const liveUsers = await fetchLiveUsers();
+      const liveUser = liveUsers?.find((item) => isSameUser(item, id));
+      if (liveUser) {
+        const response = await fetch(`${sharedApiUrl}/sellers/${encodeURIComponent(liveUser.id)}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ isActive: !liveUser.isActive }),
+          signal: AbortSignal.timeout(8_000),
+        });
+        if (response.ok) return { message: "User updated" };
+      }
       const users = readStaticUsers();
       writeStaticUsers(users.map((user) =>
         user.id === id ? { ...user, isActive: !user.isActive, updatedAt: new Date().toISOString() } : user,
@@ -254,6 +276,17 @@ export const usersApi = {
 
   updatePlan: async (id: string, plan: string): Promise<{ message: string }> => {
     if (useStaticData) {
+      const liveUsers = await fetchLiveUsers();
+      const liveUser = liveUsers?.find((item) => isSameUser(item, id));
+      if (liveUser) {
+        const response = await fetch(`${sharedApiUrl}/sellers/${encodeURIComponent(liveUser.id)}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ plan }),
+          signal: AbortSignal.timeout(8_000),
+        });
+        if (response.ok) return { message: "Plan assigned" };
+      }
       const users = readStaticUsers();
       writeStaticUsers(users.map((user) =>
         user.id === id ? { ...user, plan, updatedAt: new Date().toISOString() } : user,
@@ -321,8 +354,21 @@ export const usersApi = {
 
   getSummary: async (id: string): Promise<UserSummary> => {
     if (useStaticData) {
-      const user = readStaticUsers().find((item) => item.id === id);
-      if (!user) throw new Error("User not found");
+      const liveUsers = await fetchLiveUsers();
+      const user = liveUsers?.find((item) => isSameUser(item, id));
+      if (user) {
+        try {
+          const response = await fetch(`${sharedApiUrl}/admin/sellers/${encodeURIComponent(user.id)}/summary`, {
+            cache: "no-store",
+            signal: AbortSignal.timeout(8_000),
+          });
+          if (response.ok) return normalizeSummary(await response.json());
+        } catch {
+          // Fall back to the zero-state card while the API wakes up.
+        }
+      }
+      const fallbackUser = readStaticUsers().find((item) => isSameUser(item, id));
+      if (!fallbackUser) throw new Error("User not found");
       return {
         orders: {
           total: 0,

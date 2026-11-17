@@ -1584,7 +1584,7 @@ function dashboardData(req) {
     overview: {
       totalOrders: current.length, previousOrders: previous.length,
       ordersToday: current.filter((order) => dashboardDayKey(dashboardDate(order)) === todayKey).length,
-      activeSellers: sellerGroups.size, revenue: totalRevenue, previousRevenue: sumRevenue(previous),
+      activeSellers: sellerRegistry.list().filter((seller) => seller?.isActive !== false).length, revenue: totalRevenue, previousRevenue: sumRevenue(previous),
       deliveryRate: deliveryRate(current), previousDeliveryRate: deliveryRate(previous), avgDeliveryDays: averageDeliveryDays(current),
     },
     courierInsights, trends,
@@ -1599,6 +1599,53 @@ function dashboardData(req) {
 
 app.get("/api/admin/dashboard", (req, res, next) => {
   try { return res.json(dashboardData(req)); } catch (error) { return next(error); }
+});
+
+app.get("/api/admin/sellers/:id/summary", (req, res) => {
+  const requestedId = decodeURIComponent(String(req.params.id || "")).trim().toLowerCase();
+  const seller = sellerRegistry.list().find((item) =>
+    String(item?.id || "").trim().toLowerCase() === requestedId
+    || normalizedEmail(item?.email) === requestedId,
+  );
+  if (!seller) return res.status(404).json({ message: "Seller not found" });
+
+  const orders = [...providerOrders.values()].filter((order) => String(order?.userId || "") === String(seller.id));
+  const byStatus = {};
+  const byType = { B2B: 0, B2C: 0 };
+  const byPayment = { prepaid: 0, cod: 0 };
+  const providerTotals = new Map();
+  let revenue = 0;
+  let freight = 0;
+  let cod = 0;
+  orders.forEach((order) => {
+    const status = dashboardStatus(order);
+    byStatus[status] = (byStatus[status] || 0) + 1;
+    const orderType = order?.orderType === "B2B" ? "B2B" : "B2C";
+    byType[orderType] += 1;
+    const paymentType = String(order?.paymentType || "prepaid").toLowerCase() === "cod" ? "cod" : "prepaid";
+    byPayment[paymentType] += 1;
+    const orderRevenue = dashboardRevenue(order);
+    revenue += orderRevenue;
+    freight += dashboardCost(order);
+    cod += dashboardNumber(order?.codAmount);
+    const provider = String(order?.serviceProvider || order?.courierName || "Unknown");
+    const current = providerTotals.get(provider) || { provider, count: 0, revenue: 0 };
+    current.count += 1;
+    current.revenue += orderRevenue;
+    providerTotals.set(provider, current);
+  });
+  const ledger = walletLedger().transactions.filter((transaction) => String(transaction.userId) === String(seller.id));
+  const credits = ledger.filter((transaction) => transaction.type === "credit").reduce((sum, transaction) => sum + dashboardNumber(transaction.amount), 0);
+  const debits = ledger.filter((transaction) => transaction.type === "debit").reduce((sum, transaction) => sum + dashboardNumber(transaction.amount), 0);
+  return res.json({
+    summary: {
+      orders: { total: orders.length, byStatus, byType, byPayment },
+      revenue: { total: dashboardRound(revenue), freight: dashboardRound(freight), cod: dashboardRound(cod) },
+      remittance: { totalCodCollected: dashboardRound(cod), totalRemitted: 0, pendingRemittance: dashboardRound(cod), pendingCount: byPayment.cod, creditedCount: 0 },
+      wallet: { balance: dashboardRound(credits - debits), totalCredits: dashboardRound(credits), totalDebits: dashboardRound(debits) },
+      topProviders: [...providerTotals.values()].sort((left, right) => right.revenue - left.revenue).slice(0, 5).map((item) => ({ ...item, revenue: dashboardRound(item.revenue) })),
+    },
+  });
 });
 
 app.post("/api/provider-orders", (req, res) => {

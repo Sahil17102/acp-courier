@@ -262,6 +262,22 @@ export function registerStorageRoutes(app, { dataDir, sellerRegistry = createSel
     } catch (error) { next(error); }
   });
 
+  app.patch("/api/sellers/:id", (req, res, next) => {
+    try {
+      const requestedId = String(req.params.id || "").trim();
+      const existing = sellerRegistry.list().find((seller) => String(seller.id) === requestedId);
+      if (!existing) return res.status(404).json({ message: "Seller not found" });
+      const update = req.body && typeof req.body === "object" ? req.body : {};
+      const seller = sellerRegistry.upsert({
+        ...existing,
+        ...(typeof update.isActive === "boolean" ? { isActive: update.isActive } : {}),
+        ...(typeof update.plan === "string" && update.plan.trim() ? { plan: update.plan.trim() } : {}),
+        updatedAt: new Date().toISOString(),
+      });
+      return res.json({ user: seller });
+    } catch (error) { next(error); }
+  });
+
   app.get("/api/storage/health", async (_req, res, next) => {
     const key = acpObjectKey("healthchecks", `check-${crypto.randomUUID()}.txt`);
     try {

@@ -1,6 +1,9 @@
 import type { AdminDashboardData, DashboardFilters } from "./types";
 import { api } from "@/lib/api";
 
+const useStaticData = import.meta.env.VITE_STATIC_DATA_ENABLED === "true";
+const sharedApiUrl = (import.meta.env.VITE_API_URL || "https://acp-courier2-new.onrender.com/api").replace(/\/+$/, "");
+
 const baseDashboard: AdminDashboardData = {
   overview: {
     totalOrders: 0,
@@ -47,6 +50,19 @@ const baseDashboard: AdminDashboardData = {
 export const dashboardApi = {
   get: async (filters?: DashboardFilters): Promise<AdminDashboardData> => {
     try {
+      if (useStaticData) {
+        const query = new URLSearchParams();
+        if (filters?.days) query.set("days", String(filters.days));
+        if (filters?.serviceProvider) query.set("serviceProvider", filters.serviceProvider);
+        if (filters?.paymentType) query.set("paymentType", filters.paymentType);
+        const suffix = query.size ? `?${query.toString()}` : "";
+        const response = await fetch(`${sharedApiUrl}/admin/dashboard${suffix}`, {
+          cache: "no-store",
+          signal: AbortSignal.timeout(10_000),
+        });
+        if (!response.ok) throw new Error("Dashboard data is unavailable");
+        return await response.json() as AdminDashboardData;
+      }
       const { data } = await api.get("/dashboard", { params: filters });
       return data as AdminDashboardData;
     } catch {
