@@ -1052,6 +1052,40 @@ function walletBalance(transactions, userId) {
     .reduce((total, transaction) => total + (transaction.type === "credit" ? Number(transaction.amount || 0) : -Number(transaction.amount || 0)), 0);
 }
 
+function walletForSeller(seller) {
+  const transactions = walletLedger().transactions.filter((transaction) => String(transaction.userId) === String(seller.id));
+  return {
+    id: `wallet-${seller.id}`, userId: seller.id, userName: seller.name || null, userEmail: seller.email || null,
+    userPhone: seller.phone || null, businessName: seller.businessName || null, balance: walletBalance(transactions, seller.id),
+    currency: "INR", plan: seller.plan || "basic", isActive: seller.isActive !== false, createdAt: seller.createdAt, updatedAt: seller.updatedAt,
+  };
+}
+
+function postWalletTransaction({ seller, type, amount, reason, notes, source, orderId, serviceProvider }) {
+  const roundedAmount = Math.round(Number(amount) * 100) / 100;
+  if (!Number.isFinite(roundedAmount) || roundedAmount <= 0) {
+    throw Object.assign(new Error("Wallet amount must be greater than zero."), { status: 400 });
+  }
+  if (type !== "credit" && type !== "debit") {
+    throw Object.assign(new Error("Wallet transaction type must be credit or debit."), { status: 400 });
+  }
+  const ledger = walletLedger();
+  const balance = walletBalance(ledger.transactions, seller.id);
+  if (type === "debit" && roundedAmount > balance) {
+    throw Object.assign(new Error("Insufficient wallet balance."), { status: 400 });
+  }
+  const transaction = {
+    id: crypto.randomUUID(), walletId: `wallet-${seller.id}`, userId: seller.id, amount: roundedAmount, currency: "INR", type,
+    reason: String(reason || (type === "credit" ? "Wallet credit" : "Wallet debit")).trim(),
+    ref: `ACP-${type === "credit" ? "CR" : "DR"}-${Date.now().toString().slice(-8)}`,
+    meta: { source: source || "wallet_adjustment", ...(notes ? { notes: String(notes) } : {}), ...(orderId ? { orderId: String(orderId) } : {}), ...(serviceProvider ? { serviceProvider: String(serviceProvider) } : {}) },
+    createdAt: new Date().toISOString(),
+  };
+  ledger.transactions.unshift(transaction);
+  writeJsonFile(walletLedgerFile, ledger);
+  return { transaction, wallet: { ...walletForSeller(seller), balance: walletBalance(ledger.transactions, seller.id) } };
+}
+
 function pickupAddresses() {
   const value = readJsonFile(pickupAddressesFile, { addresses: [] });
   return { addresses: Array.isArray(value.addresses) ? value.addresses : [] };
@@ -1127,12 +1161,29 @@ app.get("/api/admin/users/:userId/pickup-addresses", (req, res) => res.json({ ad
 app.get("/api/admin/wallets/:userId", (req, res) => {
   const seller = sellerRegistry.list().find((item) => String(item.id) === String(req.params.userId));
   if (!seller) return res.status(404).json({ message: "Seller not found" });
-  const transactions = walletLedger().transactions.filter((transaction) => String(transaction.userId) === String(seller.id));
-  return res.json({ wallet: {
-    id: `wallet-${seller.id}`, userId: seller.id, userName: seller.name || null, userEmail: seller.email || null,
-    userPhone: seller.phone || null, businessName: seller.businessName || null, balance: walletBalance(transactions, seller.id),
-    currency: "INR", plan: seller.plan || "basic", isActive: seller.isActive !== false, createdAt: seller.createdAt, updatedAt: seller.updatedAt,
-  } });
+  return res.json({ wallet: walletForSeller(seller) });
+});
+
+app.get("/api/admin/wallets/:userId/transactions", (req, res) => {
+  const seller = sellerRegistry.list().find((item) => String(item.id) === String(req.params.userId));
+  if (!seller) return res.status(404).json({ message: "Seller not found" });
+  const page = Math.max(1, Number(req.query.page || 1));
+  const limit = Math.min(100, Math.max(1, Number(req.query.limit || 15)));
+  const type = String(req.query.type || "").trim();
+  const all = walletLedger().transactions
+    .filter((transaction) => String(transaction.userId) === String(seller.id))
+    .filter((transaction) => !type || transaction.type === type)
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  return res.json({ transactions: all.slice((page - 1) * limit, page * limit), pagination: { page, limit, total: all.length, totalPages: Math.max(1, Math.ceil(all.length / limit)) } });
+});
+
+app.post("/api/admin/wallets/:userId/adjust", (req, res, next) => {
+  try {
+    const seller = sellerRegistry.list().find((item) => String(item.id) === String(req.params.userId));
+    if (!seller) return res.status(404).json({ message: "Seller not found" });
+    const result = postWalletTransaction({ seller, ...req.body, source: "admin_adjustment" });
+    return res.json({ message: `Wallet ${result.transaction.type}ed successfully.`, ...result });
+  } catch (error) { next(error); }
 });
 
 function razorpayAuthorization() {
@@ -1191,6 +1242,38 @@ app.get("/api/wallet/transactions", (req, res, next) => {
       stats: { totalCredits: credits, totalDebits: debits },
       courierOptions: [...new Set(all.map((transaction) => transaction.meta?.serviceProvider).filter(Boolean))],
     });
+  } catch (error) { next(error); }
+});
+
+app.post("/api/wallet/debit", (req, res, next) => {
+  try {
+    const seller = requireSeller(req);
+    const result = postWalletTransaction({ seller, ...req.body, type: "debit", source: "order_shipping_charge" });
+    return res.status(201).json(result);
+  } catch (error) { next(error); }
+});
+
+app.post("/api/wallet/refund", (req, res, next) => {
+  try {
+    const seller = requireSeller(req);
+    const orderId = String(req.body?.orderId || "").trim();
+    if (!orderId) return res.status(400).json({ message: "Order ID is required for a wallet refund." });
+    const ledger = walletLedger();
+    const alreadyRefunded = ledger.transactions.some((transaction) => (
+      String(transaction.userId) === String(seller.id)
+      && transaction.type === "credit"
+      && transaction.meta?.source === "order_shipping_refund"
+      && String(transaction.meta?.orderId || "") === orderId
+    ));
+    if (alreadyRefunded) return res.status(409).json({ message: "This shipment has already been refunded." });
+    const hasCharge = ledger.transactions.some((transaction) => (
+      String(transaction.userId) === String(seller.id)
+      && transaction.type === "debit"
+      && String(transaction.meta?.orderId || "") === orderId
+    ));
+    if (!hasCharge) return res.status(400).json({ message: "No wallet charge was found for this shipment." });
+    const result = postWalletTransaction({ seller, ...req.body, type: "credit", source: "order_shipping_refund", orderId });
+    return res.status(201).json(result);
   } catch (error) { next(error); }
 });
 

@@ -3,23 +3,6 @@ import { shouldUseStaticClientData } from "./staticMode";
 
 const STATIC_WALLET_TRANSACTIONS_KEY = "shipsy-static-wallet-transactions";
 const STATIC_WALLET_ID = "wallet-demo-client-user";
-const SHARED_WALLET_URL = `${(import.meta.env.VITE_API_URL || "https://acp-courier2.onrender.com/api").replace(/\/+$/, "")}/wallets`;
-
-function currentUserId(): string {
-  try {
-    const user = JSON.parse(localStorage.getItem("shipsy-client-user") || "{}") as { id?: string };
-    return user.id || "demo-client-user";
-  } catch { return "demo-client-user"; }
-}
-
-async function sharedWallet(params?: Record<string, string | number>): Promise<any> {
-  const query = new URLSearchParams({ userId: currentUserId() });
-  Object.entries(params ?? {}).forEach(([key, value]) => query.set(key, String(value)));
-  const response = await fetch(`${SHARED_WALLET_URL}?${query}`, { cache: "no-store" });
-  if (!response.ok) throw new Error("Wallet service unavailable");
-  return response.json();
-}
-
 export interface WalletBalance {
   balance: number;
   currency: string;
@@ -162,13 +145,12 @@ function filterStaticTransactions(
 
 export const walletApi = {
   getBalance: async (): Promise<WalletBalance> => {
-    if (shouldUseStaticClientData()) {
-      try { const data = await sharedWallet(); return data.wallet; } catch { /* Fall back to local demo data. */ }
+    try {
+      const { data } = await api.get<WalletBalance>("/wallet/balance");
+      return data;
+    } catch {
       return { balance: getStaticBalance(), currency: "INR" };
     }
-
-    const { data } = await api.get<WalletBalance>("/wallet/balance");
-    return data;
   },
 
   getTransactions: async (params?: {
@@ -181,16 +163,12 @@ export const walletApi = {
     sortField?: string;
     sortOrder?: string;
   }): Promise<WalletTransactionsResponse> => {
-    if (shouldUseStaticClientData()) {
-      try { return await sharedWallet(params as Record<string, string | number>); } catch { /* Fall back to local demo data. */ }
+    try {
+      const { data } = await api.get<WalletTransactionsResponse>("/wallet/transactions", { params });
+      return data;
+    } catch {
       return filterStaticTransactions(readStaticTransactions(), params);
     }
-
-    const { data } = await api.get<WalletTransactionsResponse>(
-      "/wallet/transactions",
-      { params },
-    );
-    return data;
   },
 
   createRechargeOrder: async (amount: number): Promise<CreateRechargeOrderResponse> => {
@@ -229,13 +207,6 @@ export const walletApi = {
 
   rechargeStatic: async (amount: number): Promise<VerifyRechargeResponse> => {
     const roundedAmount = Math.round(amount * 100) / 100;
-    try {
-      const response = await fetch(SHARED_WALLET_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId: currentUserId(), type: "credit", amount: roundedAmount, reason: "Wallet recharge", source: "client_recharge" }) });
-      if (response.ok) {
-        const data = await response.json() as { message: string; wallet: WalletBalance };
-        return { message: data.message, balance: data.wallet.balance, creditedAmount: roundedAmount };
-      }
-    } catch { /* Fall back to local recharge while the shared service wakes up. */ }
     const transactions = readStaticTransactions();
     const transaction: WalletTransaction = {
       id: `txn-${Date.now()}`,
@@ -270,22 +241,18 @@ export const walletApi = {
       const shortfall = Math.max(0, roundedAmount - Number(currentWallet.balance));
       throw new Error(`Insufficient wallet balance. Add at least ₹${shortfall.toFixed(2)} to book this shipment.`);
     }
-    const response = await fetch(SHARED_WALLET_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId: currentUserId(), type: "debit", amount: roundedAmount, reason: `Shipping charge - ${orderId}`, source: "order_shipping_charge", orderId, serviceProvider }),
+    const { data } = await api.post<{ wallet: WalletBalance }>("/wallet/debit", {
+      amount: roundedAmount, reason: `Shipping charge - ${orderId}`, orderId, serviceProvider,
     });
-    const result = await response.json() as { error?: string; wallet?: WalletBalance };
-    if (!response.ok || !result.wallet) throw new Error(result.error || "Unable to debit wallet");
-    return result.wallet;
+    return data.wallet;
   },
 
   refundOrder: async (amount: number, orderId: string, serviceProvider?: string): Promise<void> => {
-    const response = await fetch(SHARED_WALLET_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId: currentUserId(), type: "credit", amount: Math.round(amount * 100) / 100, reason: `Shipping charge refund - ${orderId}`, source: "order_shipping_refund", orderId, serviceProvider }),
+    await api.post("/wallet/refund", {
+      amount: Math.round(amount * 100) / 100,
+      reason: `Shipping charge refund - ${orderId}`,
+      orderId,
+      serviceProvider,
     });
-    if (!response.ok) throw new Error("Shipment failed and wallet refund could not be recorded");
   },
 };

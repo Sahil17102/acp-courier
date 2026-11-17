@@ -164,6 +164,16 @@ export const walletsApi = {
 
   transactions: async ({ userId, ...params }: ListTransactionsParams) => {
     if (useStaticData) {
+      try {
+        const search = new URLSearchParams();
+        Object.entries(params).forEach(([key, value]) => {
+          if (value !== undefined && value !== null && value !== "") search.set(key, String(value));
+        });
+        const response = await fetch(`${sharedApiUrl}/admin/wallets/${encodeURIComponent(userId)}/transactions?${search}`, { cache: "no-store", signal: AbortSignal.timeout(10_000) });
+        if (response.ok) return await response.json() as ListTransactionsResponse;
+      } catch {
+        // Render wake-up fallback remains available below.
+      }
       let transactions = readStaticTransactions().filter(
         (transaction) => transaction.walletId === `wallet-${userId}`,
       );
@@ -192,24 +202,12 @@ export const walletsApi = {
 
   adjust: async (userId: string, payload: AdjustWalletPayload) => {
     if (useStaticData) {
-      const transaction: WalletTransaction = {
-        id: `admin-wallet-txn-${Date.now()}`,
-        walletId: `wallet-${userId}`,
-        amount: payload.amount,
-        currency: "INR",
-        type: payload.type,
-        reason: payload.reason,
-        ref: `ADM-${Date.now().toString().slice(-8)}`,
-        meta: { notes: payload.notes ?? "", source: "admin_adjustment" },
-        createdAt: nowIso(),
-      };
-      const next = [transaction, ...readStaticTransactions()];
-      writeStaticTransactions(next);
-      return {
-        message: "Wallet adjusted",
-        wallet: walletForUser(userId),
-        transaction,
-      };
+      const response = await fetch(`${sharedApiUrl}/admin/wallets/${encodeURIComponent(userId)}/adjust`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload), signal: AbortSignal.timeout(15_000),
+      });
+      if (response.ok) return await response.json() as { message: string; wallet: WalletListItem; transaction: WalletTransaction };
+      const error = await response.json().catch(() => ({})) as { message?: string };
+      throw new Error(error.message || "Wallet adjustment could not be saved. Please try again.");
     }
 
     const { data } = await api.post<{
