@@ -1158,6 +1158,35 @@ app.delete("/api/pickup-addresses/:id", (req, res) => {
 
 app.get("/api/admin/users/:userId/pickup-addresses", (req, res) => res.json({ addresses: userPickupAddresses(req.params.userId) }));
 
+app.get("/api/admin/wallets", (req, res) => {
+  const page = Math.max(1, Number(req.query.page || 1));
+  const limit = Math.min(100, Math.max(1, Number(req.query.limit || 20)));
+  const query = String(req.query.search || "").trim().toLowerCase();
+  const sortField = String(req.query.sortField || req.query.sortBy || "createdAt");
+  const sortOrder = String(req.query.sortOrder || "desc").toLowerCase() === "asc" ? 1 : -1;
+  let wallets = sellerRegistry.list().map((seller) => walletForSeller(seller));
+  if (query) {
+    wallets = wallets.filter((wallet) => [wallet.userName, wallet.userEmail, wallet.userPhone, wallet.businessName]
+      .filter(Boolean).some((value) => String(value).toLowerCase().includes(query)));
+  }
+  wallets.sort((left, right) => {
+    if (sortField === "balance") return (Number(left.balance) - Number(right.balance)) * sortOrder;
+    if (sortField === "userName") return String(left.userName || "").localeCompare(String(right.userName || "")) * sortOrder;
+    return (new Date(left.createdAt || 0).getTime() - new Date(right.createdAt || 0).getTime()) * sortOrder;
+  });
+  const total = wallets.length;
+  return res.json({
+    wallets: wallets.slice((page - 1) * limit, page * limit),
+    pagination: { page, limit, total, totalPages: Math.max(1, Math.ceil(total / limit)) },
+    stats: {
+      totalWallets: total,
+      totalBalance: wallets.reduce((sum, wallet) => sum + Number(wallet.balance || 0), 0),
+      walletsWithBalance: wallets.filter((wallet) => Number(wallet.balance || 0) !== 0).length,
+      walletsEmpty: wallets.filter((wallet) => Number(wallet.balance || 0) === 0).length,
+    },
+  });
+});
+
 app.get("/api/admin/wallets/:userId", (req, res) => {
   const seller = sellerRegistry.list().find((item) => String(item.id) === String(req.params.userId));
   if (!seller) return res.status(404).json({ message: "Seller not found" });

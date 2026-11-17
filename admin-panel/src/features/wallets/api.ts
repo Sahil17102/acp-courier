@@ -114,6 +114,16 @@ function paginate<T>(items: T[], page = 1, limit = 20) {
 export const walletsApi = {
   list: async (params?: ListWalletsParams) => {
     if (useStaticData) {
+      try {
+        const search = new URLSearchParams();
+        Object.entries(params ?? {}).forEach(([key, value]) => {
+          if (value !== undefined && value !== null && value !== "") search.set(key, String(value));
+        });
+        const response = await fetch(`${sharedApiUrl}/admin/wallets?${search}`, { cache: "no-store", signal: AbortSignal.timeout(15_000) });
+        if (response.ok) return await response.json() as ListWalletsResponse;
+      } catch {
+        // A local seed list is only used while the backend is unavailable.
+      }
       let wallets = readStaticUsers().map((user) => walletForUser(user.id));
       if (params?.search) {
         const query = params.search.toLowerCase();
