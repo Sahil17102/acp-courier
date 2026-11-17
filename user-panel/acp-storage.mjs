@@ -57,6 +57,29 @@ function storageConfig() {
   };
 }
 
+function optionalStorageConfig() {
+  try { return storageConfig(); } catch { return null; }
+}
+
+function storagePrefix() {
+  return clean(process.env.R2_PREFIX || "acp-courier").replace(/^\/+|\/+$/g, "") || "acp-courier";
+}
+
+function localStorageRoot() {
+  return path.resolve(clean(process.env.LOCAL_STORAGE_DIR) || path.join(clean(process.env.DATA_DIR) || path.join(process.cwd(), "data"), "uploads"));
+}
+
+function localObjectPath(key) {
+  const prefix = storagePrefix();
+  if (!key.startsWith(`${prefix}/`)) throw Object.assign(new Error("Invalid ACP object key"), { status: 400 });
+  const root = localStorageRoot();
+  const filename = path.resolve(root, ...key.split("/").map((part) => safePart(part)));
+  if (filename !== root && !filename.startsWith(`${root}${path.sep}`)) {
+    throw Object.assign(new Error("Invalid ACP local object path"), { status: 400 });
+  }
+  return filename;
+}
+
 function r2Client() {
   if (client) return client;
   const config = storageConfig();
@@ -75,13 +98,25 @@ function safePart(value, fallback = "unknown") {
 }
 
 export function acpObjectKey(...parts) {
-  const { prefix } = storageConfig();
+  const prefix = storagePrefix();
   return [prefix, ...parts.map((part) => safePart(part))].join("/");
 }
 
 export async function putAcpObject(key, body, contentType, metadata = {}) {
-  const { bucket, prefix } = storageConfig();
+  const config = optionalStorageConfig();
+  const prefix = storagePrefix();
   if (!key.startsWith(`${prefix}/`)) throw new Error("Refusing to write outside the ACP storage prefix");
+  if (!config) {
+    const filename = localObjectPath(key);
+    await fs.promises.mkdir(path.dirname(filename), { recursive: true });
+    await fs.promises.writeFile(filename, body);
+    await fs.promises.writeFile(`${filename}.meta.json`, JSON.stringify({
+      contentType: contentType || "application/octet-stream",
+      metadata: Object.fromEntries(Object.entries(metadata).map(([name, value]) => [name, String(value)])),
+    }), "utf8");
+    return key;
+  }
+  const { bucket } = config;
   await r2Client().send(new PutObjectCommand({
     Bucket: bucket,
     Key: key,
@@ -93,8 +128,23 @@ export async function putAcpObject(key, body, contentType, metadata = {}) {
 }
 
 async function getAcpObject(key) {
-  const { bucket, prefix } = storageConfig();
+  const config = optionalStorageConfig();
+  const prefix = storagePrefix();
   if (!key.startsWith(`${prefix}/`)) throw Object.assign(new Error("Invalid ACP object key"), { status: 400 });
+  if (!config) {
+    const filename = localObjectPath(key);
+    const stat = await fs.promises.stat(filename).catch(() => null);
+    if (!stat?.isFile()) throw Object.assign(new Error("ACP object not found"), { status: 404 });
+    const meta = await fs.promises.readFile(`${filename}.meta.json`, "utf8")
+      .then((value) => JSON.parse(value))
+      .catch(() => ({}));
+    return {
+      Body: fs.createReadStream(filename),
+      ContentType: meta.contentType || "application/octet-stream",
+      ContentLength: stat.size,
+    };
+  }
+  const { bucket } = config;
   return r2Client().send(new GetObjectCommand({ Bucket: bucket, Key: key }));
 }
 
@@ -215,11 +265,20 @@ export function registerStorageRoutes(app, { dataDir, sellerRegistry = createSel
   app.get("/api/storage/health", async (_req, res, next) => {
     const key = acpObjectKey("healthchecks", `check-${crypto.randomUUID()}.txt`);
     try {
-      const { bucket, prefix } = storageConfig();
-      await putAcpObject(key, Buffer.from("acp-r2-ok"), "text/plain", { service: "acp-courier" });
-      await r2Client().send(new HeadObjectCommand({ Bucket: bucket, Key: key }));
-      await r2Client().send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
-      res.json({ ok: true, provider: "cloudflare-r2", bucket, prefix: `${prefix}/` });
+      const config = optionalStorageConfig();
+      await putAcpObject(key, Buffer.from("acp-storage-ok"), "text/plain", { service: "acp-courier" });
+      if (config) {
+        await r2Client().send(new HeadObjectCommand({ Bucket: config.bucket, Key: key }));
+        await r2Client().send(new DeleteObjectCommand({ Bucket: config.bucket, Key: key }));
+        return res.json({ ok: true, provider: "cloudflare-r2", bucket: config.bucket, prefix: `${config.prefix}/`, persistent: true });
+      }
+      const filename = localObjectPath(key);
+      await fs.promises.stat(filename);
+      await Promise.all([
+        fs.promises.unlink(filename).catch(() => {}),
+        fs.promises.unlink(`${filename}.meta.json`).catch(() => {}),
+      ]);
+      return res.json({ ok: true, provider: "local-filesystem", prefix: `${storagePrefix()}/`, persistent: false });
     } catch (error) { next(error); }
   });
 
