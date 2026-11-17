@@ -1,6 +1,6 @@
 import { api } from "@/lib/api";
 import { CLIENT_KYC_KEY, mirrorClientSellerToAdmin } from "@/lib/adminSellerMirror";
-import { isRecord, shouldUseStaticClientData } from "@/lib/staticMode";
+import { isRecord } from "@/lib/staticMode";
 import type { User } from "@/contexts/AuthContext";
 import { getRequiredDocuments } from "./config";
 import type { DocumentField, DocumentKey, KycRecord, KycResponse, KycSubmitPayload } from "./types";
@@ -195,12 +195,14 @@ async function migrateCachedKyc(cached: KycRecord, remote: KycRecord): Promise<K
 }
 
 export const kycApi = {
-  /** Fetch the current user's KYC record. Falls back to local demo KYC on static deploys. */
+  /**
+   * Fetch the current user's KYC record from the shared API.
+   *
+   * KYC approval is an admin action, so browser storage can only be a
+   * temporary offline fallback. Treating it as authoritative caused an
+   * approved seller to remain stuck at "Under review" in Create Order.
+   */
   get: async (): Promise<KycResponse> => {
-    if (shouldUseStaticClientData() && !useCloudStorage) {
-      return { success: true, kyc: readStaticKyc() };
-    }
-
     try {
       const { data } = await api.get("/kyc");
       if (!isKycResponse(data)) return { success: true, kyc: readStaticKyc() };
@@ -211,28 +213,26 @@ export const kycApi = {
         mirrorCurrentSeller();
       }
       return data;
-    } catch (error) {
-      if (useCloudStorage) throw error;
+    } catch {
+      // Offline/demo fallback only. A successful API response always wins.
       return { success: true, kyc: readStaticKyc() };
     }
   },
 
   /** Submit / update KYC details and set status to pending. */
   submit: async (payload: KycSubmitPayload): Promise<KycResponse> => {
-    if (!shouldUseStaticClientData() || useCloudStorage) {
-      try {
-        const { data } = await api.post("/kyc", payload);
-        if (isKycResponse(data)) {
-          if (typeof window !== "undefined") {
-            localStorage.setItem(kycStorageKey(readCurrentUser()), JSON.stringify(data.kyc));
-            mirrorCurrentSeller();
-          }
-          return data;
+    try {
+      const { data } = await api.post("/kyc", payload);
+      if (isKycResponse(data)) {
+        if (typeof window !== "undefined") {
+          localStorage.setItem(kycStorageKey(readCurrentUser()), JSON.stringify(data.kyc));
+          mirrorCurrentSeller();
         }
-      } catch (error) {
-        if (useCloudStorage) throw error;
-        // Static panels should remain usable when the API is absent.
+        return data;
       }
+    } catch (error) {
+      if (useCloudStorage) throw error;
+      // Static panels remain usable when the API is absent.
     }
 
     const current = readStaticKyc();
@@ -254,25 +254,23 @@ export const kycApi = {
     documentKey: string,
     file: File,
   ): Promise<KycResponse> => {
-    if (!shouldUseStaticClientData() || useCloudStorage) {
-      try {
-        const formData = new FormData();
-        formData.append("document", file);
-        formData.append("documentKey", documentKey);
-        const { data } = await api.post("/kyc/upload", formData, {
-          headers: { "Content-Type": "multipart/form-data" },
-        });
-        if (isKycResponse(data)) {
-          if (typeof window !== "undefined") {
-            localStorage.setItem(kycStorageKey(readCurrentUser()), JSON.stringify(data.kyc));
-            mirrorCurrentSeller();
-          }
-          return data;
+    try {
+      const formData = new FormData();
+      formData.append("document", file);
+      formData.append("documentKey", documentKey);
+      const { data } = await api.post("/kyc/upload", formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      if (isKycResponse(data)) {
+        if (typeof window !== "undefined") {
+          localStorage.setItem(kycStorageKey(readCurrentUser()), JSON.stringify(data.kyc));
+          mirrorCurrentSeller();
         }
-      } catch (error) {
-        if (useCloudStorage) throw error;
-        // Use the local document state on static deploys and API failures.
+        return data;
       }
+    } catch (error) {
+      if (useCloudStorage) throw error;
+      // Use local document state only when an explicitly offline demo is used.
     }
 
     if (!DOCUMENT_KEYS.includes(documentKey as DocumentKey)) {
