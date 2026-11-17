@@ -21,7 +21,7 @@ export function getAccessToken(): string | null {
 type SessionExpiredListener = () => void;
 let onSessionExpired: SessionExpiredListener | null = null;
 
-const DEFAULT_API_URL = "https://acp-courier2.onrender.com/api";
+const DEFAULT_API_URL = "https://acp-courier2-new.onrender.com/api";
 // Existing sellers may still use the original public user-panel URL. Route it
 // to the current API so it cannot show stale KYC and dashboard records.
 const isLegacyUserPanel =

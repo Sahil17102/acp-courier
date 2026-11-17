@@ -3,6 +3,7 @@ import { regex } from "@/lib/constants";
 import type { CompanyProfile } from "./types";
 
 export const companyProfileSchema = z.object({
+  businessName: z.string().min(2, "Business name is required"),
   website: z.string().url("Enter a valid URL").or(z.literal("")).optional(),
   supportEmail: z.string().email("Enter a valid email"),
   contactNumber: z.string().regex(regex.phone, "Enter a valid 10-digit phone number"),
@@ -16,6 +17,7 @@ export type CompanyProfileFormValues = z.infer<typeof companyProfileSchema>;
 
 export function getDefaultValues(profile?: CompanyProfile): CompanyProfileFormValues {
   return {
+    businessName: profile?.businessName ?? "",
     website: profile?.website ?? "",
     supportEmail: profile?.supportEmail ?? "",
     contactNumber: profile?.contactNumber ?? "",

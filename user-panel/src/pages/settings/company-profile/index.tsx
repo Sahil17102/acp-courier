@@ -67,8 +67,6 @@ export default function CompanyProfilePage() {
     }`;
 
   const labelClass = "block text-xs font-semibold text-foreground mb-1.5";
-  const helperClass = "text-[11px] text-muted mt-1";
-
   return (
     <div className="mx-auto max-w-3xl px-4 sm:px-0">
       {/* Header */}
@@ -109,7 +107,7 @@ export default function CompanyProfilePage() {
           animate={{ opacity: 1, y: 0 }}
           className="bg-background-elevated rounded-2xl border border-border-light p-5 sm:p-6 space-y-5"
         >
-          {/* Read-only fields */}
+          {/* Account identity */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className={labelClass}>Brand name</label>
@@ -124,11 +122,13 @@ export default function CompanyProfilePage() {
               <label className={labelClass}>Business name</label>
               <input
                 type="text"
-                value={profile.businessName ?? ""}
-                disabled
-                className={inputClass(true)}
+                placeholder="Your business name"
+                {...register("businessName")}
+                className={inputClass()}
               />
-              <p className={helperClass}>Contact support to change</p>
+              {errors.businessName && (
+                <p className="text-xs text-red-500 mt-1">{errors.businessName.message}</p>
+              )}
             </div>
           </div>
 

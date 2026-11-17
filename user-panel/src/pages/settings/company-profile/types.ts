@@ -21,6 +21,7 @@ export interface ProfileResponse {
 }
 
 export interface ProfileUpdatePayload {
+  businessName?: string;
   website?: string;
   supportEmail?: string;
   contactNumber?: string;

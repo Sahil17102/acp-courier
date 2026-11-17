@@ -1,6 +1,6 @@
 import type { User } from "@/contexts/AuthContext";
 import { api, setAccessToken } from "./api";
-import { mirrorClientSellerToAdmin } from "./adminSellerMirror";
+import { companyProfileStorageKey, mirrorClientSellerToAdmin } from "./adminSellerMirror";
 import { isCourierApiConfigured, loginCourierApi, shouldUseCourierApi } from "./courierApi";
 import { shouldUseStaticClientData } from "./staticMode";
 
@@ -213,17 +213,35 @@ export const authApi = {
     const email = typeof payload.email === "string" ? payload.email : current.email;
     const phone = typeof payload.phone === "string" ? payload.phone : current.phone;
 
-    return {
-      user: persistUser({
-        ...current,
-        firstName,
-        lastName,
-        name: [firstName, lastName].filter(Boolean).join(" ") || current.name,
-        email,
-        phone,
-        onboardingComplete: true,
-      }),
+    const completedUser: User = {
+      ...current,
+      firstName,
+      lastName,
+      name: [firstName, lastName].filter(Boolean).join(" ") || current.name,
+      email,
+      phone,
+      onboardingComplete: true,
     };
+    // The static panel still shares seller data with the API. Store the
+    // onboarding values under this seller's own key before mirroring so a
+    // second account can never inherit the previous account's demo profile.
+    const profile = {
+      id: `company-${completedUser.id}`,
+      firstName: completedUser.firstName ?? undefined,
+      lastName: completedUser.lastName ?? undefined,
+      email: completedUser.email ?? undefined,
+      phone: completedUser.phone ?? undefined,
+      businessName: typeof payload.businessName === "string" ? payload.businessName.trim() : "",
+      pincode: typeof payload.pincode === "string" ? payload.pincode.trim() : "",
+      contactNumber: completedUser.phone ?? "",
+      supportEmail: completedUser.email ?? "",
+      sellsOn: Array.isArray(payload.sellsOn) ? payload.sellsOn : [],
+      monthlyShipmentVolume: typeof payload.monthlyShipmentVolume === "string" ? payload.monthlyShipmentVolume : "",
+    };
+    localStorage.setItem(companyProfileStorageKey(completedUser.id), JSON.stringify(profile));
+    const user = persistUser(completedUser);
+    mirrorClientSellerToAdmin(user, profile);
+    return { user };
   },
 
   logout: async (): Promise<void> => {

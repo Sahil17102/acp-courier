@@ -1,5 +1,5 @@
 import { api } from "@/lib/api";
-import { mirrorClientSellerToAdmin } from "@/lib/adminSellerMirror";
+import { companyProfileStorageKey, mirrorClientSellerToAdmin } from "@/lib/adminSellerMirror";
 import { shouldUseStaticClientData } from "@/lib/staticMode";
 import type { User } from "@/contexts/AuthContext";
 import type { ProfileResponse, ProfileUpdatePayload } from "./types";
@@ -42,14 +42,14 @@ function defaultProfile(): ProfileResponse {
       lastName: user.lastName ?? "Seller",
       email: user.email ?? "sahilmittal1920@gmail.com",
       phone: user.phone ?? "9876543210",
-      businessName: "ACP Courier Speed Demo Store",
-      website: "https://acpcourier.vercel.app",
-      supportEmail: "pkmmittal97@gmail.com",
-      contactNumber: "9876543210",
-      address: "DLF Cyber City, Sector 24",
-      pincode: "122001",
-      city: "Gurugram",
-      state: "Haryana",
+      businessName: "",
+      website: "",
+      supportEmail: user.email ?? "",
+      contactNumber: user.phone ?? "",
+      address: "",
+      pincode: "",
+      city: "",
+      state: "",
       plan: "basic",
     },
   };
@@ -57,17 +57,35 @@ function defaultProfile(): ProfileResponse {
 
 function readStaticProfile(): ProfileResponse {
   if (typeof window === "undefined") return defaultProfile();
-  const raw = localStorage.getItem(COMPANY_PROFILE_STORAGE_KEY);
+  const currentUser = readCurrentUser();
+  const storageKey = companyProfileStorageKey(currentUser?.id);
+  const raw = localStorage.getItem(storageKey);
   if (!raw) {
     const profile = defaultProfile();
-    localStorage.setItem(COMPANY_PROFILE_STORAGE_KEY, JSON.stringify(profile.profile));
+    // Only migrate a legacy record when it belongs to the signed-in email.
+    // Old builds used one global key and caused one seller's profile to leak
+    // into every subsequent seller account.
+    const legacyRaw = localStorage.getItem(COMPANY_PROFILE_STORAGE_KEY);
+    try {
+      const legacy = legacyRaw ? JSON.parse(legacyRaw) : null;
+      if (
+        legacy?.email === currentUser?.email &&
+        legacy?.businessName !== "ACP Courier Speed Demo Store"
+      ) {
+        localStorage.setItem(storageKey, JSON.stringify(legacy));
+        return { success: true, profile: { ...profile.profile, ...legacy } };
+      }
+    } catch {
+      // Ignore malformed legacy browser data.
+    }
+    localStorage.setItem(storageKey, JSON.stringify(profile.profile));
     return profile;
   }
   try {
     return { success: true, profile: { ...defaultProfile().profile, ...JSON.parse(raw) } };
   } catch {
     const profile = defaultProfile();
-    localStorage.setItem(COMPANY_PROFILE_STORAGE_KEY, JSON.stringify(profile.profile));
+    localStorage.setItem(storageKey, JSON.stringify(profile.profile));
     return profile;
   }
 }
@@ -76,8 +94,8 @@ function writeStaticProfile(payload: ProfileUpdatePayload): ProfileResponse {
   const current = readStaticProfile().profile;
   const profile = { ...current, ...payload };
   if (typeof window !== "undefined") {
-    localStorage.setItem(COMPANY_PROFILE_STORAGE_KEY, JSON.stringify(profile));
     const user = readCurrentUser();
+    localStorage.setItem(companyProfileStorageKey(user?.id), JSON.stringify(profile));
     if (user?.id) mirrorClientSellerToAdmin(user, profile);
   }
   return { success: true, profile };
@@ -100,8 +118,8 @@ export const profileApi = {
         const { data } = await api.put("/profile", payload);
         if (data?.profile) {
           if (typeof window !== "undefined") {
-            localStorage.setItem(COMPANY_PROFILE_STORAGE_KEY, JSON.stringify(data.profile));
             const user = readCurrentUser();
+            localStorage.setItem(companyProfileStorageKey(user?.id), JSON.stringify(data.profile));
             if (user?.id) mirrorClientSellerToAdmin(user, data.profile);
           }
           return data;
