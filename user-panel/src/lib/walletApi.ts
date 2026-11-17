@@ -159,7 +159,14 @@ export const walletApi = {
     sortOrder?: string;
   }): Promise<WalletTransactionsResponse> => {
     const { data } = await api.get<WalletTransactionsResponse>("/wallet/transactions", { params });
-    return data;
+    // The API normally returns pagination, totals and courier filters together.
+    // Keep this local normaliser for a partially populated response during a
+    // deployment transition; it does not read browser wallet data or replace
+    // a valid live ledger response.
+    if (data?.pagination && data?.stats && Array.isArray(data?.courierOptions)) {
+      return data;
+    }
+    return filterStaticTransactions(Array.isArray(data?.transactions) ? data.transactions : [], params);
   },
 
   createRechargeOrder: async (amount: number): Promise<CreateRechargeOrderResponse> => {
