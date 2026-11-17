@@ -311,7 +311,7 @@ export function DashboardPage() {
     ? { from: customFrom, to: customTo || undefined, orderType: orderType || undefined }
     : { days: periodDays, orderType: orderType || undefined };
 
-  const { data: dashboard, isLoading, error } = useDashboard(filters);
+  const { data: dashboard, isLoading } = useDashboard(filters);
 
   if (isLoading && !dashboard) {
     return (
