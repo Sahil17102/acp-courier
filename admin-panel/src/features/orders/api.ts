@@ -14,6 +14,9 @@ import type {
   ListExportJobsResponse,
 } from "./types";
 
+const useStaticData = import.meta.env.VITE_STATIC_DATA_ENABLED !== "false";
+const sharedApiUrl = (import.meta.env.VITE_API_URL || "https://acp-courier2-new.onrender.com/api").replace(/\/+$/, "");
+
 export interface OrderFiltersParams {
   search?: string;
   status?: string;
@@ -66,6 +69,16 @@ function withExpand<T extends { expand?: ExpandableOrderRelation[] }>(
 
 export const ordersApi = {
   list: async (params?: OrderFiltersParams): Promise<ListOrdersResponse> => {
+    if (useStaticData) {
+      const query = new URLSearchParams();
+      const request = withExpand(params);
+      Object.entries(request ?? {}).forEach(([key, value]) => {
+        if (value !== undefined && value !== null && value !== "") query.set(key, String(value));
+      });
+      const response = await fetch(`${sharedApiUrl}/admin/orders?${query}`, { cache: "no-store", signal: AbortSignal.timeout(15_000) });
+      if (!response.ok) throw new Error("Unable to load live orders. Please refresh and try again.");
+      return await response.json() as ListOrdersResponse;
+    }
     const { data } = await api.get("/orders", { params: withExpand(params) });
     return data as ListOrdersResponse;
   },

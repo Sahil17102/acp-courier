@@ -1623,6 +1623,57 @@ app.get("/api/provider-orders", (req, res) => {
   res.json({ orders });
 });
 
+// Admin panels use this shared, paginated view instead of browser demo data.
+// It intentionally has no seller identity header: an administrator needs the
+// complete operational list while the seller-facing route above stays scoped.
+app.get("/api/admin/orders", (req, res) => {
+  const page = Math.max(1, Number(req.query.page || 1));
+  const limit = Math.min(100, Math.max(1, Number(req.query.limit || 20)));
+  const search = String(req.query.search || "").trim().toLowerCase();
+  const status = String(req.query.status || "").trim().toLowerCase();
+  const orderType = String(req.query.orderType || "").trim().toLowerCase();
+  const paymentType = String(req.query.paymentType || "").trim().toLowerCase();
+  const serviceProvider = String(req.query.serviceProvider || "").trim().toLowerCase();
+  const courierId = String(req.query.courierId || "").trim();
+  const userId = String(req.query.userId || "").trim();
+  const startDate = String(req.query.startDate || "").trim();
+  const endDate = String(req.query.endDate || "").trim();
+  const sortField = String(req.query.sortField || "createdAt");
+  const sortOrder = String(req.query.sortOrder || "desc").toLowerCase() === "asc" ? 1 : -1;
+  const searchText = (order) => [
+    order.id, order.orderId, order.awb, order.courierName, order.serviceProvider,
+    order.user?.name, order.user?.email, order.user?.businessName,
+    order.deliveryAddress?.contactName, order.deliveryAddress?.phone,
+    order.deliveryAddress?.city, order.deliveryAddress?.state, order.deliveryAddress?.pincode,
+  ].filter(Boolean).join(" ").toLowerCase();
+  let all = [...providerOrders.values()].map(publicOrder);
+  if (search) all = all.filter((order) => searchText(order).includes(search));
+  if (status) all = all.filter((order) => dashboardStatus(order) === status);
+  if (orderType) all = all.filter((order) => String(order.orderType || "").toLowerCase() === orderType);
+  if (paymentType) all = all.filter((order) => String(order.paymentType || "prepaid").toLowerCase() === paymentType);
+  if (serviceProvider) all = all.filter((order) => String(order.serviceProvider || "").toLowerCase() === serviceProvider);
+  if (courierId) all = all.filter((order) => String(order.courierId || "") === courierId);
+  if (userId) all = all.filter((order) => String(order.userId || "") === userId);
+  if (startDate) all = all.filter((order) => new Date(order.createdAt || 0).getTime() >= new Date(`${startDate}T00:00:00`).getTime());
+  if (endDate) all = all.filter((order) => new Date(order.createdAt || 0).getTime() <= new Date(`${endDate}T23:59:59.999`).getTime());
+  all.sort((left, right) => {
+    if (sortField === "orderAmount") return (Number(left.orderAmount || 0) - Number(right.orderAmount || 0)) * sortOrder;
+    if (sortField === "status") return dashboardStatus(left).localeCompare(dashboardStatus(right)) * sortOrder;
+    return (new Date(left.createdAt || 0).getTime() - new Date(right.createdAt || 0).getTime()) * sortOrder;
+  });
+  const stats = { total: all.length, created: 0, processing: 0, booked: 0, pickup_initiated: 0, shipped: 0, in_transit: 0, out_for_delivery: 0, delivered: 0, ndr: 0, rto_initiated: 0, rto_in_transit: 0, rto_delivered: 0, cancelled: 0, lost: 0, totalRevenue: 0 };
+  all.forEach((order) => {
+    const key = dashboardStatus(order);
+    if (Object.prototype.hasOwnProperty.call(stats, key)) stats[key] += 1;
+    stats.totalRevenue += dashboardNumber(order.rate?.totalCharge ?? order.totalCharge ?? order.shippingCharge);
+  });
+  return res.json({
+    orders: all.slice((page - 1) * limit, page * limit),
+    pagination: { page, limit, total: all.length, totalPages: Math.max(1, Math.ceil(all.length / limit)) },
+    stats: { ...stats, totalRevenue: dashboardRound(stats.totalRevenue) },
+  });
+});
+
 function dashboardNumber(value) {
   const result = Number(value);
   return Number.isFinite(result) ? result : 0;
