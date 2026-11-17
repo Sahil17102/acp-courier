@@ -8,7 +8,9 @@ import { getThemeVarsStyle } from "@/theme";
 export default function AdminLayout() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarHoverExpanded, setSidebarHoverExpanded] = useState(false);
   const { mode } = useTheme();
+  const compactSidebar = sidebarCollapsed && !sidebarHoverExpanded;
 
   return (
     <div
@@ -19,14 +21,18 @@ export default function AdminLayout() {
       <Sidebar
         mobileOpen={mobileOpen}
         onMobileClose={() => setMobileOpen(false)}
-        collapsed={sidebarCollapsed}
+        collapsed={compactSidebar}
+        onCollapsedHoverChange={setSidebarHoverExpanded}
       />
 
       <div className="flex-1 flex flex-col min-w-0">
         <AdminHeader
           onMobileMenuOpen={() => setMobileOpen(true)}
-          sidebarCollapsed={sidebarCollapsed}
-          onToggleSidebar={() => setSidebarCollapsed((c) => !c)}
+          sidebarCollapsed={compactSidebar}
+          onToggleSidebar={() => {
+            setSidebarHoverExpanded(false);
+            setSidebarCollapsed((c) => !c);
+          }}
         />
         <main className="flex-1 overflow-y-auto p-4 sm:p-6">
           <Outlet />

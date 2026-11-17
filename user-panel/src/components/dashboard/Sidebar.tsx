@@ -9,6 +9,7 @@ interface SidebarProps {
   mobileOpen: boolean;
   onMobileClose: () => void;
   collapsed: boolean;
+  onCollapsedHoverChange?: (expanded: boolean) => void;
 }
 
 function SidebarContent({
@@ -53,12 +54,16 @@ function SidebarContent({
   );
 }
 
-export function Sidebar({ mobileOpen, onMobileClose, collapsed }: SidebarProps) {
+export function Sidebar({ mobileOpen, onMobileClose, collapsed, onCollapsedHoverChange }: SidebarProps) {
   return (
     <>
       {/* Desktop sidebar */}
       <aside
-        className={`hidden lg:flex flex-col bg-background-elevated border-r border-primary/10 h-screen sticky top-0 shrink-0 transition-[width] duration-200 ease-in-out shadow-[4px_0_22px_rgba(17,29,54,0.035)] ${
+        onMouseEnter={() => {
+          if (collapsed) onCollapsedHoverChange?.(true);
+        }}
+        onMouseLeave={() => onCollapsedHoverChange?.(false)}
+        className={`hidden lg:flex flex-col bg-background-elevated border-r border-primary/10 h-screen sticky top-0 shrink-0 transition-[width] duration-300 ease-out shadow-[4px_0_22px_rgba(17,29,54,0.035)] ${
           collapsed ? "w-[68px]" : "w-60"
         }`}
       >

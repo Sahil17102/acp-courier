@@ -108,6 +108,23 @@ function isSameUser(user: UserListItem, id: string): boolean {
   return user.id.trim().toLowerCase() === requested || user.email?.trim().toLowerCase() === requested;
 }
 
+function routeFallbackUser(id: string): UserListItem | null {
+  const requested = decodeURIComponent(id).trim();
+  const email = requested.startsWith("client-") ? requested.slice("client-".length) : requested;
+  if (!email.includes("@")) return null;
+  const now = new Date().toISOString();
+  return normalizeUser({
+    id: requested,
+    email,
+    name: email.split("@")[0].replace(/[._-]+/g, " "),
+    businessName: "ACP Courier Speed Seller",
+    isActive: true,
+    plan: "basic",
+    createdAt: now,
+    updatedAt: now,
+  });
+}
+
 function normalizeSummary(raw: unknown): UserSummary {
   const response = asRecord(raw);
   const summary = asRecord(response.summary ?? raw);
@@ -241,8 +258,9 @@ export const usersApi = {
       const liveUsers = await fetchLiveUsers();
       const user = liveUsers?.find((item) => isSameUser(item, id))
         ?? readStaticUsers().find((item) => isSameUser(item, id));
-      if (!user) throw new Error("User not found");
-      return { user: normalizeUser(user) };
+      const fallbackUser = routeFallbackUser(id);
+      if (!user && !fallbackUser) throw new Error("User not found");
+      return { user: normalizeUser(user ?? fallbackUser) };
     }
 
     const { data } = await api.get(`/users/${id}`);

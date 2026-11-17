@@ -193,15 +193,22 @@ interface SidebarProps {
   mobileOpen: boolean;
   onMobileClose: () => void;
   collapsed: boolean;
+  onCollapsedHoverChange?: (expanded: boolean) => void;
 }
 
-export default function Sidebar({ mobileOpen, onMobileClose, collapsed }: SidebarProps) {
+export default function Sidebar({ mobileOpen, onMobileClose, collapsed, onCollapsedHoverChange }: SidebarProps) {
   return (
     <>
       {/* Desktop sidebar */}
-      <aside className={`hidden lg:flex flex-col bg-background-elevated border-r border-border-light h-screen sticky top-0 shrink-0 transition-[width] duration-200 ease-in-out ${
+      <aside
+        onMouseEnter={() => {
+          if (collapsed) onCollapsedHoverChange?.(true);
+        }}
+        onMouseLeave={() => onCollapsedHoverChange?.(false)}
+        className={`hidden lg:flex flex-col bg-background-elevated border-r border-border-light h-screen sticky top-0 shrink-0 transition-[width] duration-300 ease-out ${
         collapsed ? "w-[68px]" : "w-60"
-      }`}>
+        }`}
+      >
         {/* Header */}
         <div className={`flex items-center h-14 px-4 border-b border-border-light shrink-0 ${collapsed ? "justify-center px-2" : ""}`}>
           <AppLogo size="sm" showText={!collapsed} />
