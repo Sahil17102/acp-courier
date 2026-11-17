@@ -13,8 +13,12 @@ const courierApiEmail = import.meta.env.VITE_COURIER_EMAIL || "";
 const courierApiPassword = import.meta.env.VITE_COURIER_PASSWORD || "";
 const courierApiToken = import.meta.env.VITE_COURIER_API_TOKEN || "";
 const courierApiFlag = import.meta.env.VITE_COURIER_API_ENABLED;
+// Both ACP API deployments proxy courier orders.  The `-new` production
+// hostname must use the same fast, seller-scoped provider-order endpoint as
+// the legacy hostname; otherwise the panel first calls the unrelated /orders
+// endpoint, gets a 404, and draft/real orders appear to be missing.
 const serverManagedCourier =
-  courierApiBaseUrl.includes("acp-courier2.onrender.com") ||
+  courierApiBaseUrl.includes("acp-courier2") ||
   courierApiBaseUrl.startsWith("/");
 
 let inMemoryToken: string | null = courierApiToken || null;
